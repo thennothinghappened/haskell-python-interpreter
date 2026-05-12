@@ -7,8 +7,8 @@ import Data.Char (isAlphaNum, isAlpha, isNumber)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
 
-data Token =
-    Ident String
+data Token
+  = Ident String
   | IntLit Int
   | SingleEquals
   deriving (Show)
