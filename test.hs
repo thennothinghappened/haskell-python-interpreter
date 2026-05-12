@@ -1,8 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 
 import Prelude hiding (lex)
-import Data.List
-import Data.Bool
 import Data.Char (isAlphaNum, isAlpha, isNumber)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
