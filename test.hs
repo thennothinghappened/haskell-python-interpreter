@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 
-import Prelude (String, Int, IO, readFile, putStrLn, Monad ((>>=)), Show (show), pure, mapM_, print, Maybe (Just, Nothing), Eq ((==)), Char, undefined)
+import Prelude hiding (lex)
 import Data.List
 import Data.Bool
 import Data.Char (isAlphaNum, isAlpha, isNumber)
