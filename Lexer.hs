@@ -1,9 +1,15 @@
-{-# LANGUAGE ViewPatterns, OverloadedRecordDot, DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
+
+module Lexer(Token, TokenInfo, Location, Span, lexString) where
 
 import Prelude hiding (lex)
 import Data.Char (isAlphaNum, isAlpha, isNumber)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
+
+-- |Convert the passed string into a sequence of lexical tokens that can be later parsed.
+lexString :: String -> [TokenInfo]
+lexString inputString = lex (Input inputString startOfFile)
 
 data Token
   = Ident String
@@ -81,11 +87,6 @@ updateLocation :: Location -> Char -> Location
 updateLocation location '\r' = location
 updateLocation location '\n' = nextRow location
 updateLocation location _ = nextColumn location
-
-main :: IO ()
-main = do
-  input <- readFile "input.py"
-  print (lex (Input input startOfFile))
 
 lex :: Input -> [TokenInfo]
 lex (Input [] _) = []
