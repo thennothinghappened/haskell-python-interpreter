@@ -1,4 +1,4 @@
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ViewPatterns, OverloadedRecordDot, DuplicateRecordFields #-}
 
 import Prelude hiding (lex)
 import Data.Char (isAlphaNum, isAlpha, isNumber)
@@ -11,43 +11,102 @@ data Token
   | SingleEquals
   deriving (Show)
 
+data Location = Location {
+  row :: Int,
+  column :: Int
+} deriving(Eq)
+
+nextColumn :: Location -> Location
+nextColumn Location { row, column } = Location { row, column = column + 1 }
+
+nextRow :: Location -> Location
+nextRow Location { row } = Location { row = row + 1, column = 1 }
+
+instance Show Location where
+  show Location { row, column } = show row ++ ":" ++ show column
+
+startOfFile :: Location
+startOfFile = Location { row = 1, column = 1 }
+
+data Span = Span {
+  start :: Location,
+  end :: Location
+}
+
+emptySpan :: Location -> Span
+emptySpan location = Span location location
+
+instance Show Span where
+  show Span { start, end } = show start ++ " to " ++ show end
+
+data TokenInfo = TokenInfo Token Span
+
+instance Show TokenInfo where
+  show (TokenInfo token span) = show token ++ " from " ++ show span
+
+data Input = Input {
+  text :: String,
+  start :: Location
+}
+
+-- |Move to the next character of the input.
+inputNext :: Input -> Input
+inputNext (Input (c : rest) loc) =
+  Input
+    rest
+    (updateLocation loc c)
+inputNext emptyInput = emptyInput
+
+-- |Drop N characters from the input.
+inputDrop :: Word -> Input -> Input
+inputDrop 0 input = input
+inputDrop n input = inputDrop (n - 1) (inputNext input)
+
+inputSpan :: (Char -> Bool) -> Input -> ((Span, String), Input)
+inputSpan f input@(Input (c : _) start)
+  | f c =
+      let ((Span { end }, match), unmatched) = inputSpan f (inputNext input)
+        in ((Span { start, end }, c : match), unmatched)
+inputSpan _ input = ((emptySpan input.start, []), input)
+
+-- |Drop characters from the start of the input file which match the given predicate.
+inputDropWhile :: (Char -> Bool) -> Input -> Input
+inputDropWhile f input =
+  case inputSpan f input of
+    ((_, []), _) -> input
+    ((_, _), rest) -> rest
+
+-- |Increment the row or column of the given location as appropriate to the character there.
+updateLocation :: Location -> Char -> Location
+updateLocation location '\r' = location
+updateLocation location '\n' = nextRow location
+updateLocation location _ = nextColumn location
+
 main :: IO ()
 main = do
   input <- readFile "input.py"
-  print (lex input)
+  print (lex (Input input startOfFile))
 
-lex :: String -> [Token]
-lex [] = []
-lex ('=' : rest) = SingleEquals : lex rest
+lex :: Input -> [TokenInfo]
+lex (Input [] _) = []
 lex input
-  | isValidIdentStart c = lexIdent input
-  | isNumber c = lexInt input
-  | isWhiteSpace c = lex (dropWhile isWhiteSpace input)
+  | c == '=' =
+    TokenInfo
+      SingleEquals
+      (Span input.start (nextColumn input.start)) : lex (inputNext input)
+  | isValidIdentStart c =
+      let ((span, ident), rest) = inputSpan isValidIdent input
+        in TokenInfo (Ident ident) span : lex rest
+  | isNumber c =
+      let ((span, valueString), rest) = inputSpan isValidIdent input
+        in case readMaybe valueString of
+          Just value -> TokenInfo (IntLit value) span : lex rest
+          Nothing -> undefined
+  | isWhiteSpace c =
+      lex (inputDropWhile isWhiteSpace input)
   | otherwise = []
   where
-    c = head input
-
-lexIdent :: String -> [Token]
-lexIdent input = Ident ident : lex rest
-  where (ident, rest) = consumeIdent input
-
-lexInt :: String -> [Token]
-lexInt input = IntLit value : lex rest
-  where (value, rest) = consumeInt input
-
-consumeIdent :: String -> (String, String)
-consumeIdent input
-  | isAlphaNum c || (c == '_') = span isValidIdent input
-  | otherwise = ([], input)
-  where
-    c = head input
-
-consumeInt :: String -> (Int, String)
-consumeInt input =
-  let (numString, rest) = span isNumber input
-    in case readMaybe numString of
-      Just value -> (value, rest)
-      Nothing -> undefined
+    c = head input.text
 
 isValidIdent :: Char -> Bool
 isValidIdent c = isAlphaNum c || (c == '_')
