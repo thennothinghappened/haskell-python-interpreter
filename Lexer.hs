@@ -34,6 +34,16 @@ nextRow Location { row } = Location { row = row + 1, column = 1 }
 instance Show Location where
   show Location { row, column } = show row ++ ":" ++ show column
 
+instance Ord Location where
+  compare :: Location -> Location -> Ordering
+  compare a b
+    | a.row < b.row = LT
+    | a.row > b.row = GT
+    | a.column > b.column = GT
+    | a.column < b.column = LT
+    | a.column == b.column = EQ
+    | otherwise = EQ
+
 startOfFile :: Location
 startOfFile = Location { row = 1, column = 1 }
 
@@ -44,6 +54,9 @@ data Span = Span {
 
 emptySpan :: Location -> Span
 emptySpan location = Span location location
+
+union :: Span -> Span -> Span
+a `union` b = Span (min a.start b.start) (max a.end b.end)
 
 instance Show Span where
   show Span { start, end } = show start ++ " to " ++ show end
@@ -60,40 +73,44 @@ data Input = Input {
 
 -- |Move to the next character of the input.
 inputNext :: Input -> Input
-inputNext (Input (c : rest) loc) =
-  Input
-    rest
-    (updateLocation loc c)
-inputNext emptyInput = emptyInput
+inputNext input =
+  case inputMapNext Just input of
+    Just (_, input') -> input'
+    Nothing -> input
 
--- |Drop N characters from the input.
-inputDrop :: Word -> Input -> Input
-inputDrop 0 input = input
-inputDrop n input = inputDrop (n - 1) (inputNext input)
+-- |Map the next character using the given function, returning the mapped value if successful.
+inputMapNext :: (Char -> Maybe a) -> Input -> Maybe ((a, Span), Input)
+inputMapNext _ (Input [] _) = Nothing
+inputMapNext f (Input (c : rest) start) = do
+  value <- f c
+  let end = updateLocation start c
+  Just ((value, Span start end), Input rest end)
 
-inputSpan :: (Char -> Bool) -> Input -> ((Span, String), Input)
-inputSpan f input@(Input (c : _) start)
-  | f c =
-      let ((Span { end }, match), unmatched) = inputSpan f (inputNext input)
-        in ((Span { start, end }, c : match), unmatched)
-inputSpan _ input = ((emptySpan input.start, []), input)
+-- |Accept a single character matching the predicate.
+inputAccept :: (Char -> Bool) -> Input -> Maybe ((Char, Span), Input)
+inputAccept f = inputMapNext (\c -> if f c then Just c else Nothing)
 
--- |Drop characters from the start of the input file which match the given predicate.
-inputDropWhile :: (Char -> Bool) -> Input -> Input
-inputDropWhile f input =
+inputSpan :: (Char -> Bool) -> Input -> Maybe ((String, Span), Input)
+inputSpan f (inputAccept f -> Just ((c, start), input)) =
   case inputSpan f input of
-    ((_, []), _) -> input
-    ((_, _), rest) -> rest
+    Just ((match, end), input') -> Just ((c : match, start `union` end), input')
+    Nothing -> Just (([c], start), input)
+inputSpan _ _ = Nothing
 
 -- |Remove the given prefix from the input if present, returning the rest of the input if
 --  successful, and the span from start to end of the prefix.
 inputStripPrefix :: String -> Input -> Maybe (Span, Input)
 inputStripPrefix [] input = Just (emptySpan input.start, input)
-inputStripPrefix (c : restPrefix) (Input (textC : restText) start)
-  | c == textC = do
-      (Span _ end, input') <- inputStripPrefix restPrefix (Input restText (updateLocation start c))
-      Just (Span start end, input')
+inputStripPrefix (c : restPrefix) (inputAccept (== c) -> Just ((_, startSpan), input)) = do
+  (Span _ end, input') <- inputStripPrefix restPrefix input
+  Just (Span startSpan.start end, input')
 inputStripPrefix _ _ = Nothing
+
+-- |Match the given prefix with the input, and convert it to an instance of the token if successful.
+inputToken :: String -> Token -> Input -> Maybe (TokenInfo, Input)
+inputToken text token input = do
+  (span, input') <- inputStripPrefix text input
+  Just (TokenInfo token span, input')
 
 -- |Increment the row or column of the given location as appropriate to the character there.
 updateLocation :: Location -> Char -> Location
@@ -103,32 +120,25 @@ updateLocation location _ = nextColumn location
 
 lex :: Input -> [TokenInfo]
 lex (Input [] _) = []
-lex (inputStripPrefix "return" -> Just (span, input)) = TokenInfo Return span : lex input
-lex (inputStripPrefix "=" -> Just (span, input)) = TokenInfo SingleEquals span : lex input
-lex input
-  | c == '\n' =
-    TokenInfo
-      NewLine
-      (Span input.start (nextRow input.start)) : lex (inputNext input)
-  | c == '\t' =
-    let ((span, _), rest) = inputSpan (== '\t') input
-        in TokenInfo (Indents (span.end.column - span.start.column)) span : lex rest
-  | isValidIdentStart c =
-      let ((span, ident), rest) = inputSpan isValidIdent input
-        in TokenInfo (Ident ident) span : lex rest
-  | isNumber c =
-      let ((span, valueString), rest) = inputSpan isNumber input
-        in case readMaybe valueString of
-          Just value -> TokenInfo (IntLit value) span : lex rest
-          Nothing -> undefined
-  | isWhiteSpace c =
-      lex (inputDropWhile isWhiteSpace input)
-  | otherwise = error ("Unexpected character " ++ show c ++ " in input at " ++ show input.start)
-  where
-    c = head input.text
+lex (inputToken "return" Return -> Just (token, input)) = token : lex input
+lex (inputToken "=" SingleEquals -> Just (token, input)) = token : lex input
+lex (inputToken "\n" NewLine -> Just (token, input)) = token : lex input
+lex (inputSpan (== '\t') -> Just ((tabs, span), input)) = TokenInfo (Indents (length tabs)) span : lex input
+lex (inputSpan isWhiteSpace -> Just (_, input)) = lex input
+lex (lexNumber -> Just ((num, span), input)) = TokenInfo (IntLit num) span : lex input
+lex (lexIdent -> Just ((ident, span), input)) = TokenInfo (Ident ident) span : lex input
+lex (Input (c : _) start) = error ("Unexpected character " ++ show c ++ " in input at " ++ show start)
 
-isValidIdent :: Char -> Bool
-isValidIdent c = isAlphaNum c || (c == '_')
+lexNumber :: Input -> Maybe ((Int, Span), Input)
+lexNumber (inputMapNext (\c -> readMaybe [c]) -> Just ((digit, startSpan), input)) =
+  case lexNumber input of
+    Just ((nextDigit, Span { end }), input') -> Just ((digit * 10 + nextDigit, Span startSpan.start end), input')
+    Nothing -> Just ((digit, startSpan), input)
+lexNumber _ = Nothing
 
-isValidIdentStart :: Char -> Bool
-isValidIdentStart c = isAlpha c || (c == '_')
+lexIdent :: Input -> Maybe ((String, Span), Input)
+lexIdent (inputAccept (\c -> isAlpha c || (c == '_')) -> Just ((c, startSpan), input)) =
+    case inputSpan (\c -> isAlphaNum c || (c == '_')) input of
+      Nothing -> Just (([c], startSpan), input)
+      Just ((rest, endSpan), input') -> Just ((c : rest, Span startSpan.start endSpan.end), input')
+lexIdent _ = Nothing
