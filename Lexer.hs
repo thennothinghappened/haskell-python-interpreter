@@ -1,11 +1,12 @@
-{-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
+{-# LANGUAGE ViewPatterns, OverloadedRecordDot, DuplicateRecordFields #-}
 
-module Lexer(Token, TokenInfo, Location, Span, lexString) where
+module Lexer(Token(..), TokenInfo(..), Location, Span, lexString) where
 
 import Prelude hiding (lex)
 import Data.Char (isAlphaNum, isAlpha, isNumber)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
+import Data.List (stripPrefix)
 
 -- |Convert the passed string into a sequence of lexical tokens that can be later parsed.
 lexString :: String -> [TokenInfo]
@@ -15,6 +16,9 @@ data Token
   = Ident String
   | IntLit Int
   | SingleEquals
+  | Return
+  | NewLine
+  | Indents Int
   deriving (Show)
 
 data Location = Location {
@@ -90,11 +94,23 @@ updateLocation location _ = nextColumn location
 
 lex :: Input -> [TokenInfo]
 lex (Input [] _) = []
+lex input@(Input ('r' : 'e' : 't' : 'u' : 'r' : 'n' : _) start) =
+  TokenInfo
+    Return
+    (Span start start { column = start.column + 6 })
+  : lex (inputDrop 6 input)
 lex input
   | c == '=' =
     TokenInfo
       SingleEquals
       (Span input.start (nextColumn input.start)) : lex (inputNext input)
+  | c == '\n' =
+    TokenInfo
+      NewLine
+      (Span input.start (nextRow input.start)) : lex (inputNext input)
+  | c == '\t' =
+    let ((span, _), rest) = inputSpan (== '\t') input
+        in TokenInfo (Indents (span.end.column - span.start.column)) span : lex rest
   | isValidIdentStart c =
       let ((span, ident), rest) = inputSpan isValidIdent input
         in TokenInfo (Ident ident) span : lex rest
