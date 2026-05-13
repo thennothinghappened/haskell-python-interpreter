@@ -1,8 +1,14 @@
 {-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
 
-module Interpreter(Env, Value, run, defaultEnvironment) where
+module Interpreter (Env, Value, run, defaultEnvironment) where
 
-import qualified Parser(Func(..), FuncArg(..), Stmt(..), Expr(..))
+import Parser (Func, FuncArg, Stmt, Expr, BinOp)
+import qualified Parser as Func (Func(..))
+import qualified Parser as FuncArg (FuncArg(..))
+import qualified Parser as Stmt (Stmt(..))
+import qualified Parser as Expr (Expr(..))
+import qualified Parser as BinOp (BinOp(..))
+
 import Control.Monad.State (State, MonadState (get), modify)
 import qualified Data.Map as Map
 import Data.Functor ((<&>))
@@ -52,7 +58,7 @@ data EvalResult
 --   createCallEnv restArgs []
 
 -- |Execute a program retrieve the returned value, and the new program state.
-run :: [Parser.Stmt] -> State Env EvalResult
+run :: [Stmt] -> State Env EvalResult
 run [] = pure $ Ok None
 run (stmt : rest) = do
   result <- runStmt stmt
@@ -62,8 +68,8 @@ run (stmt : rest) = do
     Just result -> pure result
 
 -- |Execute a single statement in the given program environment.
-runStmt :: Parser.Stmt -> State Env (Maybe EvalResult)
-runStmt Parser.Assign { name, expr } = do
+runStmt :: Stmt -> State Env (Maybe EvalResult)
+runStmt Stmt.Assign { name, expr } = do
   exprResult <- eval expr
 
   case exprResult of
@@ -72,37 +78,36 @@ runStmt Parser.Assign { name, expr } = do
       pure Nothing
     Err message -> pure $ Just (Err message)
 
-runStmt (Parser.Return expr) = eval expr <&> Just
+runStmt (Stmt.Return expr) = eval expr <&> Just
 
-runStmt (Parser.PoisonStmt { span, message }) =
+runStmt (Stmt.PoisonStmt { span, message }) =
   pure (Just (Err ("Malformed program at " ++ show span ++ ": " ++ message)))
 
 -- |Evaluate the given expression, returning the result and updated program state.
-eval :: Parser.Expr -> State Env EvalResult
-eval (Parser.IntLit value) = pure (Ok (Int value))
+eval :: Expr -> State Env EvalResult
+eval (Expr.IntLit value) = pure (Ok (Int value))
 
-eval (Parser.Ref name) = do
+eval (Expr.Ref name) = do
   env <- get
 
   case Map.lookup name env.vars of
     Just value -> pure $ Ok value
     Nothing -> pure $ Err $ "Reference to undefined variable " ++ show name
 
-eval (Parser.Add left right) = evalBinOp add left right
-
-eval Parser.None = pure (Ok None)
+eval (Expr.BinOp op left right) = evalBinOp op left right
+eval Expr.None = pure (Ok None)
 
 -- |Evaluate the result of the given binary operation between two values.
-evalBinOp :: (Value -> Value -> EvalResult) -> Parser.Expr -> Parser.Expr -> State Env EvalResult
-evalBinOp f left right = do
+evalBinOp :: BinOp -> Expr -> Expr -> State Env EvalResult
+evalBinOp op left right = do
   leftResult <- eval left
 
   case leftResult of
-    Ok leftValue -> evalUnaryOp (f leftValue) right
+    Ok leftValue -> evalUnaryOp (performBinOp op leftValue) right
     Err message -> pure (Err message)
 
 -- |Evaluate the result of the given unary operation on the given value.
-evalUnaryOp :: (Value -> EvalResult) -> Parser.Expr -> State Env EvalResult
+evalUnaryOp :: (Value -> EvalResult) -> Expr -> State Env EvalResult
 evalUnaryOp f expr = do
   valueResult <- eval expr
 
@@ -110,7 +115,7 @@ evalUnaryOp f expr = do
     Ok value -> pure (f value)
     Err message -> pure (Err message)
 
--- |Add two runtime values together, if possible.
-add :: Value -> Value -> EvalResult
-add (Int left) (Int right) = Ok (Int (left + right))
-add left right = Err ("Can't add " ++ show left ++ " to " ++ show right)
+-- |Perform the given binary operation between two values.
+performBinOp :: BinOp -> Value -> Value -> EvalResult
+performBinOp BinOp.Add (Int left) (Int right) = Ok $ Int (left + right)
+performBinOp op left right = Err ("Can't perform op " ++ show left ++ show op ++ show right)

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
 
-module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), parse) where
+module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), BinOp(..), parse) where
 
 import qualified Lexer(Token(..), TokenInfo(..), Span)
 
@@ -28,9 +28,17 @@ data Stmt
 data Expr
   = IntLit Int
   | Ref String
-  | Add Expr Expr
+  | BinOp BinOp Expr Expr
   | None
   deriving (Show)
+
+-- |An operation taking two operands.
+data BinOp
+  = Add
+
+instance Show BinOp where
+  show :: BinOp -> String
+  show Add = "+"
 
 -- |Parse a full source file into a top-level callable function.
 parse :: [Lexer.TokenInfo] -> [Stmt]
@@ -69,7 +77,7 @@ parseInnerExpr tokens = do
   case tokens' of
     (Lexer.TokenInfo Lexer.Plus _ : tokens'') -> do
       (right, tokens''') <- parseInnerExpr tokens''
-      Just (Add left right, tokens''')
+      Just (BinOp Add left right, tokens''')
     _ -> Just (left, tokens')
 
 parseTerminalExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
