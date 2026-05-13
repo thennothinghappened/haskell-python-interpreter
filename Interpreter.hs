@@ -64,4 +64,15 @@ runStmt _ stmt = error ("Unhandled statement type " ++ show stmt)
 eval :: Env -> Parser.Expr -> (Value, Env)
 eval env (Parser.IntLit value) = (Int value, env)
 eval env (Parser.Ref name) = (findWithDefault None name env.vars, env)
-eval _ expr = error ("Unhandled expression type " ++ show expr)
+eval env (Parser.Add left right) =
+  let (leftValue, env') = eval env left
+   in let (rightValue, env'') = eval env' right
+       in case add leftValue rightValue of
+            Just result -> (result, env'')
+            Nothing -> error ("Can't add " ++ show leftValue ++ " to " ++ show rightValue)
+eval env Parser.None = (None, env)
+
+-- |Add two runtime values together, if possible.
+add :: Value -> Value -> Maybe Value
+add (Int left) (Int right) = Just (Int (left + right))
+add _ _ = Nothing

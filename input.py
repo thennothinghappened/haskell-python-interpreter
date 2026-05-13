@@ -1,6 +1,6 @@
 
-a = 2
+a = 2 + 3 + 4
 b = 44
-b = a
+b = a + 1
 
-return b
+return b + 5

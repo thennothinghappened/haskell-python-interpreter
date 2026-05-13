@@ -28,6 +28,7 @@ data Stmt
 data Expr
   = IntLit Int
   | Ref String
+  | Add Expr Expr
   | None
   deriving (Show)
 
@@ -43,8 +44,8 @@ parseBody (Lexer.TokenInfo Lexer.NewLine _ : rest) = parseBody rest
 parseBody ( Lexer.TokenInfo (Lexer.Ident name) start
           : Lexer.TokenInfo Lexer.SingleEquals _
           : rest ) =
-    case parseInnerExpr rest (Assign name) of
-      Just (stmt, rest') -> stmt : parseBody rest'
+    case parseInnerExpr rest of
+      Just (expr, rest') -> Assign name expr : parseBody rest'
       Nothing -> PoisonStmt "Assignment to invalid expression" start : parseBody (dropWhile (not . isNewLine) rest)
 
 parseBody ( Lexer.TokenInfo Lexer.Return _
@@ -54,22 +55,27 @@ parseBody ( Lexer.TokenInfo Lexer.Return _
 
 parseBody ( Lexer.TokenInfo Lexer.Return start
           : rest ) =
-    case parseInnerExpr rest Return of
-      Just (stmt, rest') -> stmt : parseBody rest'
+    case parseInnerExpr rest of
+      Just (expr, rest') -> Return expr : parseBody rest'
       Nothing -> PoisonStmt "Return invalid expression" start : parseBody (dropWhile (not . isNewLine) rest)
 
 parseBody (token : _) = error ("Unhandled token " ++ show token)
 
--- |Parse an expression that forms a greater whole.
-parseInnerExpr :: [Lexer.TokenInfo] -> (Expr -> a) -> Maybe (a, [Lexer.TokenInfo])
-parseInnerExpr tokens build = do
-  (expr, tokens') <- parseExpr tokens
-  Just (build expr, tokens')
+-- |Parse a top-level expression.
+parseInnerExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
+parseInnerExpr tokens = do
+  (left, tokens') <- parseTerminalExpr tokens
 
-parseExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
-parseExpr (Lexer.TokenInfo (Lexer.IntLit value) _ : rest) = Just (IntLit value, rest)
-parseExpr (Lexer.TokenInfo (Lexer.Ident value) _ : rest) = Just (Ref value, rest)
-parseExpr _ = Nothing
+  case tokens' of
+    (Lexer.TokenInfo Lexer.Plus _ : tokens'') -> do
+      (right, tokens''') <- parseInnerExpr tokens''
+      Just (Add left right, tokens''')
+    _ -> Just (left, tokens')
+
+parseTerminalExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
+parseTerminalExpr (Lexer.TokenInfo (Lexer.IntLit value) _ : rest) = Just (IntLit value, rest)
+parseTerminalExpr (Lexer.TokenInfo (Lexer.Ident value) _ : rest) = Just (Ref value, rest)
+parseTerminalExpr _ = Nothing
 
 isNewLine :: Lexer.TokenInfo -> Bool
 isNewLine (Lexer.TokenInfo Lexer.NewLine _) = True
