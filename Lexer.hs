@@ -123,7 +123,7 @@ lex input
           Nothing -> undefined
   | isWhiteSpace c =
       lex (inputDropWhile isWhiteSpace input)
-  | otherwise = []
+  | otherwise = error ("Unexpected character " ++ show c ++ " in input at " ++ show input.start)
   where
     c = head input.text
 
