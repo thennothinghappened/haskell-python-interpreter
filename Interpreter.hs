@@ -3,7 +3,8 @@
 module Interpreter(Env, Value, run, defaultEnvironment) where
 
 import qualified Parser(Func(..), FuncArg(..), Stmt(..), Expr(..))
-import Data.HashMap.Strict (HashMap, empty, insert)
+import Data.HashMap.Strict (HashMap, empty, insert, findWithDefault)
+import Data.Maybe (fromMaybe)
 
 -- |A sandboxed environment in which to execute a program.
 --  Represents the current program state.
@@ -62,4 +63,5 @@ runStmt _ stmt = error ("Unhandled statement type " ++ show stmt)
 -- |Evaluate the given expression, returning the result and updated program state.
 eval :: Env -> Parser.Expr -> (Value, Env)
 eval env (Parser.IntLit value) = (Int value, env)
+eval env (Parser.Ref name) = (findWithDefault None name env.vars, env)
 eval _ expr = error ("Unhandled expression type " ++ show expr)

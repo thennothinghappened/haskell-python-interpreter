@@ -27,6 +27,7 @@ data Stmt
 -- |An expression that evaluates to a value.
 data Expr
   = IntLit Int
+  | Ref String
   | None
   deriving (Show)
 
@@ -67,6 +68,7 @@ parseInnerExpr tokens build = do
 
 parseExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
 parseExpr (Lexer.TokenInfo (Lexer.IntLit value) _ : rest) = Just (IntLit value, rest)
+parseExpr (Lexer.TokenInfo (Lexer.Ident value) _ : rest) = Just (Ref value, rest)
 parseExpr _ = Nothing
 
 isNewLine :: Lexer.TokenInfo -> Bool
