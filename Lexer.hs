@@ -99,7 +99,7 @@ lex input
       let ((span, ident), rest) = inputSpan isValidIdent input
         in TokenInfo (Ident ident) span : lex rest
   | isNumber c =
-      let ((span, valueString), rest) = inputSpan isValidIdent input
+      let ((span, valueString), rest) = inputSpan isNumber input
         in case readMaybe valueString of
           Just value -> TokenInfo (IntLit value) span : lex rest
           Nothing -> undefined
