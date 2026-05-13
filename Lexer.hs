@@ -6,7 +6,6 @@ import Prelude hiding (lex)
 import Data.Char (isAlphaNum, isAlpha, isNumber)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
-import Data.List (stripPrefix)
 
 -- |Convert the passed string into a sequence of lexical tokens that can be later parsed.
 lexString :: String -> [TokenInfo]
@@ -86,6 +85,16 @@ inputDropWhile f input =
     ((_, []), _) -> input
     ((_, _), rest) -> rest
 
+-- |Remove the given prefix from the input if present, returning the rest of the input if
+--  successful, and the span from start to end of the prefix.
+inputStripPrefix :: String -> Input -> Maybe (Span, Input)
+inputStripPrefix [] input = Just (emptySpan input.start, input)
+inputStripPrefix (c : restPrefix) (Input (textC : restText) start)
+  | c == textC = do
+      (Span _ end, input') <- inputStripPrefix restPrefix (Input restText (updateLocation start c))
+      Just (Span start end, input')
+inputStripPrefix _ _ = Nothing
+
 -- |Increment the row or column of the given location as appropriate to the character there.
 updateLocation :: Location -> Char -> Location
 updateLocation location '\r' = location
@@ -94,16 +103,9 @@ updateLocation location _ = nextColumn location
 
 lex :: Input -> [TokenInfo]
 lex (Input [] _) = []
-lex input@(Input ('r' : 'e' : 't' : 'u' : 'r' : 'n' : _) start) =
-  TokenInfo
-    Return
-    (Span start start { column = start.column + 6 })
-  : lex (inputDrop 6 input)
+lex (inputStripPrefix "return" -> Just (span, input)) = TokenInfo Return span : lex input
+lex (inputStripPrefix "=" -> Just (span, input)) = TokenInfo SingleEquals span : lex input
 lex input
-  | c == '=' =
-    TokenInfo
-      SingleEquals
-      (Span input.start (nextColumn input.start)) : lex (inputNext input)
   | c == '\n' =
     TokenInfo
       NewLine
