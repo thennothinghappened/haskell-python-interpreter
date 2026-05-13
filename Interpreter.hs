@@ -4,8 +4,7 @@ module Interpreter(Env, Value, run, defaultEnvironment) where
 
 import qualified Parser(Func(..), FuncArg(..), Stmt(..), Expr(..))
 import Data.HashMap.Strict (HashMap, empty, insert, findWithDefault)
-import Data.Maybe (fromMaybe)
-import Control.Monad.State (State, MonadState (get), runState, evalState, modify)
+import Control.Monad.State (State, MonadState (get), modify)
 
 -- |A sandboxed environment in which to execute a program.
 --  Represents the current program state.
@@ -50,7 +49,7 @@ run :: [Parser.Stmt] -> State Env Value
 run [] = pure None
 run (stmt : rest) = do
   result <- runStmt stmt
-  
+
   case result of
     None -> run rest
     result -> pure result

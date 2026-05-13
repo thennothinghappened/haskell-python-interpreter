@@ -3,7 +3,7 @@
 module Lexer(Token(..), TokenInfo(..), Location, Span, lexString) where
 
 import Prelude hiding (lex)
-import Data.Char (isAlphaNum, isAlpha, isNumber)
+import Data.Char (isAlphaNum, isAlpha)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
 
