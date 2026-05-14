@@ -27,6 +27,7 @@ data Stmt
 -- |An expression that evaluates to a value.
 data Expr
   = IntLit Int
+  | StringLit String
   | Ref String
   | BinOp BinOp Expr Expr
   | None
@@ -90,6 +91,7 @@ parseInnerExpr tokens = do
 parseTerminalExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
 parseTerminalExpr (Lexer.TokenInfo (Lexer.IntLit value) _ : rest) = Just (IntLit value, rest)
 parseTerminalExpr (Lexer.TokenInfo (Lexer.Ident value) _ : rest) = Just (Ref value, rest)
+parseTerminalExpr (Lexer.TokenInfo (Lexer.StringLit value) _ : rest) = Just (StringLit value, rest)
 parseTerminalExpr _ = Nothing
 
 isNewLine :: Lexer.TokenInfo -> Bool

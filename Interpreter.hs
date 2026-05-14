@@ -26,6 +26,7 @@ defaultEnvironment = Env Map.empty
 -- |A value of a given type at runtime.
 data Value
   = Int Int
+  | String String
   | None
   deriving (Show)
 
@@ -86,6 +87,7 @@ runStmt (Stmt.PoisonStmt { span, message }) =
 -- |Evaluate the given expression, returning the result and updated program state.
 eval :: Expr -> State Env EvalResult
 eval (Expr.IntLit value) = pure (Ok (Int value))
+eval (Expr.StringLit value) = pure (Ok (String value))
 
 eval (Expr.Ref name) = do
   env <- get
@@ -118,5 +120,6 @@ evalUnaryOp f expr = do
 -- |Perform the given binary operation between two values.
 performBinOp :: BinOp -> Value -> Value -> EvalResult
 performBinOp BinOp.Add (Int left) (Int right) = Ok $ Int (left + right)
+performBinOp BinOp.Add (String left) (String right) = Ok $ String (left ++ right)
 performBinOp BinOp.Sub (Int left) (Int right) = Ok $ Int (left - right)
 performBinOp op left right = Err ("Can't perform op " ++ show left ++ show op ++ show right)

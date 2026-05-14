@@ -14,6 +14,7 @@ lexString inputString = lex (Input inputString startOfFile)
 data Token
   = Ident String
   | IntLit Int
+  | StringLit String
   | SingleEquals
   | Plus
   | Minus
@@ -92,6 +93,11 @@ inputMapNext f (Input (c : rest) start) = do
 inputAccept :: (Char -> Bool) -> Input -> Maybe ((Char, Span), Input)
 inputAccept f = inputMapNext (\c -> if f c then Just c else Nothing)
 
+-- |Consume the given character from the start of the input, if present.
+inputConsume :: Char -> Input -> Maybe (Span, Input)
+inputConsume c (inputAccept (== c) -> Just ((_, span), input)) = Just (span, input)
+inputConsume _ _ = Nothing
+
 inputSpan :: (Char -> Bool) -> Input -> Maybe ((String, Span), Input)
 inputSpan f (inputAccept f -> Just ((c, start), input)) =
   case inputSpan f input of
@@ -103,7 +109,7 @@ inputSpan _ _ = Nothing
 --  successful, and the span from start to end of the prefix.
 inputStripPrefix :: String -> Input -> Maybe (Span, Input)
 inputStripPrefix [] input = Just (emptySpan input.start, input)
-inputStripPrefix (c : restPrefix) (inputAccept (== c) -> Just ((_, startSpan), input)) = do
+inputStripPrefix (c : restPrefix) (inputConsume c -> Just (startSpan, input)) = do
   (Span _ end, input') <- inputStripPrefix restPrefix input
   Just (Span startSpan.start end, input')
 inputStripPrefix _ _ = Nothing
@@ -126,23 +132,33 @@ lex (inputToken "return" Return -> Just (token, input)) = token : lex input
 lex (inputToken "=" SingleEquals -> Just (token, input)) = token : lex input
 lex (inputToken "+" Plus -> Just (token, input)) = token : lex input
 lex (inputToken "-" Minus -> Just (token, input)) = token : lex input
+-- lex (Input ('"' : rest) start) = 
 lex (inputToken "\n" NewLine -> Just (token, input)) = token : lex input
 lex (inputSpan (== '\t') -> Just ((tabs, span), input)) = TokenInfo (Indents (length tabs)) span : lex input
 lex (inputSpan isWhiteSpace -> Just (_, input)) = lex input
 lex (lexNumber -> Just ((num, span), input)) = TokenInfo (IntLit num) span : lex input
 lex (lexIdent -> Just ((ident, span), input)) = TokenInfo (Ident ident) span : lex input
+lex (lexStringLit -> Just ((string, span), input)) = TokenInfo (StringLit string) span : lex input
 lex (Input (c : _) start) = error ("Unexpected character " ++ show c ++ " in input at " ++ show start)
 
 lexNumber :: Input -> Maybe ((Int, Span), Input)
-lexNumber (inputMapNext (\c -> readMaybe [c]) -> Just ((digit, startSpan), input)) =
+lexNumber (inputMapNext (\c -> readMaybe [c]) -> Just ((digit, start), input)) =
   case lexNumber input of
-    Just ((nextDigit, Span { end }), input') -> Just ((digit * 10 + nextDigit, Span startSpan.start end), input')
-    Nothing -> Just ((digit, startSpan), input)
+    Just ((nextDigit, end), input') -> Just ((digit * 10 + nextDigit, start `union` end), input')
+    Nothing -> Just ((digit, start), input)
 lexNumber _ = Nothing
 
 lexIdent :: Input -> Maybe ((String, Span), Input)
 lexIdent (inputAccept (\c -> isAlpha c || (c == '_')) -> Just ((c, startSpan), input)) =
     case inputSpan (\c -> isAlphaNum c || (c == '_')) input of
       Nothing -> Just (([c], startSpan), input)
-      Just ((rest, endSpan), input') -> Just ((c : rest, Span startSpan.start endSpan.end), input')
+      Just ((rest, endSpan), input') -> Just ((c : rest, startSpan `union` endSpan), input')
 lexIdent _ = Nothing
+
+lexStringLit :: Input -> Maybe ((String, Span), Input)
+lexStringLit input = do
+  (start, input') <- inputConsume '"' input
+  ((string, _), input'') <- inputSpan (/= '"') input'
+  (end, input''') <- inputConsume '"' input''
+
+  Just ((string, start `union` end), input''')
