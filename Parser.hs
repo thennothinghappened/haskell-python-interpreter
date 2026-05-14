@@ -4,6 +4,7 @@ module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), BinOp(..), parse) where
 
 import Lexer (TokenInfo(..), Span)
 import qualified Lexer as Token (Token(..))
+import Data.Maybe (fromMaybe)
 
 -- |A callable function in the program.
 data Func = Func {
@@ -32,6 +33,7 @@ data Expr
   | StringLit String
   | Ref String
   | BinOp BinOp Expr Expr
+  | Call Expr [Expr]
   | None
   deriving (Show)
 
@@ -114,17 +116,26 @@ stmt `thenRest` (rest, tokens) = (stmt : rest, tokens)
 parseInnerExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
 parseInnerExpr tokens = do
   (left, tokens') <- parseTerminalExpr tokens
+  parsePostfixExpr left tokens'
 
-  case tokens' of
-    (TokenInfo Token.Plus _ : tokens'') -> do
-      (right, tokens''') <- parseInnerExpr tokens''
-      Just (BinOp Add left right, tokens''')
+parsePostfixExpr :: Expr -> [TokenInfo] -> Maybe (Expr, [TokenInfo])
+parsePostfixExpr left tokens =
+  case tokens of
+    (TokenInfo Token.Plus _ : tokens') -> do
+      (right, tokens'') <- parseInnerExpr tokens'
+      Just (BinOp Add left right, tokens'')
 
-    (TokenInfo Token.Minus _ : tokens'') -> do
-      (right, tokens''') <- parseInnerExpr tokens''
-      Just (BinOp Sub left right, tokens''')
+    (TokenInfo Token.Minus _ : tokens') -> do
+      (right, tokens'') <- parseInnerExpr tokens'
+      Just (BinOp Sub left right, tokens'')
 
-    _ -> Just (left, tokens')
+    (TokenInfo Token.OpenParen _ : tokens') -> do
+      (args, tokens'') <- parseFuncCall tokens'
+      let call = Call left args
+
+      Just $ fromMaybe (call, tokens'') (parsePostfixExpr call tokens'')
+
+    _ -> Just (left, tokens)
 
 parseTerminalExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
 parseTerminalExpr (TokenInfo (Token.IntLit value) _ : rest) = Just (IntLit value, rest)
@@ -161,6 +172,9 @@ parseFuncArgs (TokenInfo Token.OpenParen _ : tokens) = do
     parseArgList _ = Nothing
 
 parseFuncArgs _ = Nothing
+
+parseFuncCall :: [TokenInfo] -> Maybe ([Expr], [TokenInfo])
+parseFuncCall (TokenInfo Token.CloseParen _ : rest) = Just ([], rest)
 
 -- eatIndents :: [TokenInfo] -> [TokenInfo]
 -- eatIndents (TokenInfo (Token.Indents _) _ : rest) = eatIndents rest

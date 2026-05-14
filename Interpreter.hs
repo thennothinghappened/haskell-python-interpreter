@@ -30,11 +30,15 @@ data Value
   | None
   deriving (Show)
 
--- |The result of evaluating an expression at runtime.
-data EvalResult
-  = Ok Value
-  | Err String
+-- |Generic result type.
+data Result t e
+  = Ok t
+  | Err e
   deriving (Show)
+
+-- |The result of evaluating an expression at runtime.
+type EvalResult = Result Value RuntimeError
+type RuntimeError = String
 
 -- |Call a function in the program with the provided arguments, and retrieve the returned value, and
 --  the new program state.
@@ -106,6 +110,36 @@ eval (Expr.Ref name) = do
     Nothing -> pure $ Err $ "Reference to undefined variable " ++ show name
 
 eval (Expr.BinOp op left right) = evalBinOp op left right
+
+eval (Expr.Call target args) = do
+  targetValue <- eval target
+
+  case targetValue of
+    Ok (FuncRef func) -> do
+      argValuesResult <- evalArgs args
+
+      case argValuesResult of
+        Ok argValues -> call func argValues
+        Err message -> pure $ Err message
+
+    Ok value -> pure $ Err ("Value " ++ show value ++ " is not callable")
+    Err message -> pure $ Err message
+  where
+    evalArgs :: [Expr] -> State Env (Result [Value] RuntimeError)
+    evalArgs [] = pure $ Ok []
+    evalArgs (arg : rest) = do
+      result <- eval arg
+
+      case result of
+        Ok value -> do
+          restResult <- evalArgs rest
+
+          case restResult of
+            Ok restValues -> pure $ Ok (value : restValues)
+            Err message -> pure $ Err message
+        
+        Err message -> pure $ Err message
+
 eval Expr.None = pure (Ok None)
 
 -- |Evaluate the result of the given binary operation between two values.

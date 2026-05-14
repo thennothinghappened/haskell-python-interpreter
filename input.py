@@ -4,6 +4,6 @@ b = 44
 b = a + 1
 
 def stuff(a, b = 4):
-	return "wat"
+	return "whoa!!! "
 
-return stuff + "hi " + "there"
+return stuff() + "hi " + "there"
