@@ -118,4 +118,5 @@ evalUnaryOp f expr = do
 -- |Perform the given binary operation between two values.
 performBinOp :: BinOp -> Value -> Value -> EvalResult
 performBinOp BinOp.Add (Int left) (Int right) = Ok $ Int (left + right)
+performBinOp BinOp.Sub (Int left) (Int right) = Ok $ Int (left - right)
 performBinOp op left right = Err ("Can't perform op " ++ show left ++ show op ++ show right)

@@ -35,10 +35,12 @@ data Expr
 -- |An operation taking two operands.
 data BinOp
   = Add
+  | Sub
 
 instance Show BinOp where
   show :: BinOp -> String
   show Add = "+"
+  show Sub = "-"
 
 -- |Parse a full source file into a top-level callable function.
 parse :: [Lexer.TokenInfo] -> [Stmt]
@@ -78,6 +80,11 @@ parseInnerExpr tokens = do
     (Lexer.TokenInfo Lexer.Plus _ : tokens'') -> do
       (right, tokens''') <- parseInnerExpr tokens''
       Just (BinOp Add left right, tokens''')
+
+    (Lexer.TokenInfo Lexer.Minus _ : tokens'') -> do
+      (right, tokens''') <- parseInnerExpr tokens''
+      Just (BinOp Sub left right, tokens''')
+      
     _ -> Just (left, tokens')
 
 parseTerminalExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])

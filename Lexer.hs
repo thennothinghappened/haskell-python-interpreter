@@ -16,6 +16,7 @@ data Token
   | IntLit Int
   | SingleEquals
   | Plus
+  | Minus
   | Return
   | NewLine
   | Indents Int
@@ -124,6 +125,7 @@ lex (Input [] _) = []
 lex (inputToken "return" Return -> Just (token, input)) = token : lex input
 lex (inputToken "=" SingleEquals -> Just (token, input)) = token : lex input
 lex (inputToken "+" Plus -> Just (token, input)) = token : lex input
+lex (inputToken "-" Minus -> Just (token, input)) = token : lex input
 lex (inputToken "\n" NewLine -> Just (token, input)) = token : lex input
 lex (inputSpan (== '\t') -> Just ((tabs, span), input)) = TokenInfo (Indents (length tabs)) span : lex input
 lex (inputSpan isWhiteSpace -> Just (_, input)) = lex input
