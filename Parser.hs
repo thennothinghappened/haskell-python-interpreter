@@ -2,7 +2,8 @@
 
 module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), BinOp(..), parse) where
 
-import qualified Lexer(Token(..), TokenInfo(..), Span)
+import Lexer (TokenInfo(..), Span)
+import qualified Lexer as Token (Token(..))
 
 -- |A callable function in the program.
 data Func = Func {
@@ -20,8 +21,9 @@ data FuncArg = FuncArg {
 -- |An executable statement in a program.
 data Stmt
   = Assign { name :: String, expr :: Expr }
+  | DefineFunc { name :: String, func :: Func }
   | Return Expr
-  | PoisonStmt { message :: String, span :: Lexer.Span }
+  | PoisonStmt { message :: String, span :: Span }
   deriving (Show)
 
 -- |An expression that evaluates to a value.
@@ -44,56 +46,126 @@ instance Show BinOp where
   show Sub = "-"
 
 -- |Parse a full source file into a top-level callable function.
-parse :: [Lexer.TokenInfo] -> [Stmt]
-parse = parseBody
+parse :: [TokenInfo] -> [Stmt]
+parse tokens =
+  let (statements, _) = parseBody 0 tokens
+   in statements
 
 -- |Parse a function body into a list of statements.
-parseBody :: [Lexer.TokenInfo] -> [Stmt]
-parseBody [] = []
-parseBody (Lexer.TokenInfo Lexer.NewLine _ : rest) = parseBody rest
+parseBody :: Int -> [TokenInfo] -> ([Stmt], [TokenInfo])
+parseBody _ [] = ([], [])
 
-parseBody ( Lexer.TokenInfo (Lexer.Ident name) start
-          : Lexer.TokenInfo Lexer.SingleEquals _
+-- If the next line is indented less, it doesn't belong to us.
+parseBody indents tokens@(TokenInfo (Token.NewLine  nextIndents) pos : rest)
+  | nextIndents < indents = ([], tokens)
+  | nextIndents == indents = parseBody indents rest
+  | nextIndents > indents = PoisonStmt "Too much indentation" pos `thenRest` parseBody indents rest
+
+parseBody indents
+          ( TokenInfo (Token.Ident name) start
+          : TokenInfo Token.SingleEquals _
           : rest ) =
     case parseInnerExpr rest of
-      Just (expr, rest') -> Assign name expr : parseBody rest'
-      Nothing -> PoisonStmt "Assignment to invalid expression" start : parseBody (dropWhile (not . isNewLine) rest)
+      Just (expr, rest') -> Assign name expr `thenRest` parseBody indents rest'
 
-parseBody ( Lexer.TokenInfo Lexer.Return _
-          : Lexer.TokenInfo Lexer.NewLine _
+      Nothing ->
+        PoisonStmt "Assignment to invalid expression" start
+        `thenRest` parseBody indents (dropWhile (not . isNewLine) rest)
+
+parseBody indents
+          ( TokenInfo Token.Def start
+          : TokenInfo (Token.Ident name) _
           : rest ) =
-    Return None : parseBody rest
+    case parseFuncArgs rest of
+      Just (args, TokenInfo Token.Colon _ : rest') ->
+        let (body, rest'') = parseBody (indents + 1) rest'
+         in DefineFunc { name, func = Func args body } `thenRest` parseBody indents rest''
 
-parseBody ( Lexer.TokenInfo Lexer.Return start
+      Nothing ->
+        PoisonStmt ("Malformed argument list for function " ++ show name) start
+        `thenRest` parseBody indents (dropWhile (not . isNewLine) rest)
+
+      _ ->
+        PoisonStmt ("Missing colon on function definition " ++ show name) start
+        `thenRest` parseBody indents (dropWhile (not . isNewLine) rest)
+
+parseBody indents
+          ( TokenInfo Token.Return _
+          : TokenInfo (Token.NewLine _) _
+          : rest ) =
+    Return None `thenRest` parseBody indents rest
+
+parseBody indents
+          ( TokenInfo Token.Return start
           : rest ) =
     case parseInnerExpr rest of
-      Just (expr, rest') -> Return expr : parseBody rest'
-      Nothing -> PoisonStmt "Return invalid expression" start : parseBody (dropWhile (not . isNewLine) rest)
+      Just (expr, rest') -> Return expr `thenRest` parseBody indents rest'
 
-parseBody (token : _) = error ("Unhandled token " ++ show token)
+      Nothing ->
+        PoisonStmt "Return invalid expression" start
+        `thenRest` parseBody indents (dropWhile (not . isNewLine) rest)
+
+parseBody _ (token : _) = error ("Unhandled token " ++ show token)
+
+thenRest :: Stmt -> ([Stmt], [TokenInfo]) -> ([Stmt], [TokenInfo])
+stmt `thenRest` (rest, tokens) = (stmt : rest, tokens)
 
 -- |Parse a top-level expression.
-parseInnerExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
+parseInnerExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
 parseInnerExpr tokens = do
   (left, tokens') <- parseTerminalExpr tokens
 
   case tokens' of
-    (Lexer.TokenInfo Lexer.Plus _ : tokens'') -> do
+    (TokenInfo Token.Plus _ : tokens'') -> do
       (right, tokens''') <- parseInnerExpr tokens''
       Just (BinOp Add left right, tokens''')
 
-    (Lexer.TokenInfo Lexer.Minus _ : tokens'') -> do
+    (TokenInfo Token.Minus _ : tokens'') -> do
       (right, tokens''') <- parseInnerExpr tokens''
       Just (BinOp Sub left right, tokens''')
-      
+
     _ -> Just (left, tokens')
 
-parseTerminalExpr :: [Lexer.TokenInfo] -> Maybe (Expr, [Lexer.TokenInfo])
-parseTerminalExpr (Lexer.TokenInfo (Lexer.IntLit value) _ : rest) = Just (IntLit value, rest)
-parseTerminalExpr (Lexer.TokenInfo (Lexer.Ident value) _ : rest) = Just (Ref value, rest)
-parseTerminalExpr (Lexer.TokenInfo (Lexer.StringLit value) _ : rest) = Just (StringLit value, rest)
+parseTerminalExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
+parseTerminalExpr (TokenInfo (Token.IntLit value) _ : rest) = Just (IntLit value, rest)
+parseTerminalExpr (TokenInfo (Token.Ident value) _ : rest) = Just (Ref value, rest)
+parseTerminalExpr (TokenInfo (Token.StringLit value) _ : rest) = Just (StringLit value, rest)
 parseTerminalExpr _ = Nothing
 
-isNewLine :: Lexer.TokenInfo -> Bool
-isNewLine (Lexer.TokenInfo Lexer.NewLine _) = True
+parseFuncArgs :: [TokenInfo] -> Maybe ([FuncArg], [TokenInfo])
+parseFuncArgs (TokenInfo Token.OpenParen _ : tokens) = do
+    parseArgList tokens
+  where
+    parseArgList :: [TokenInfo] -> Maybe ([FuncArg], [TokenInfo])
+    parseArgList (TokenInfo Token.CloseParen _ : tokens) = Just ([], tokens)
+
+    parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.SingleEquals _ : tokens) = do
+      (defaultValue, tokens') <- parseInnerExpr tokens
+
+      case tokens' of
+        (TokenInfo Token.Comma _ : rest) -> do
+          (restArgs, tokens'') <- parseArgList rest
+          Just (FuncArg name defaultValue : restArgs, tokens'')
+
+        (TokenInfo Token.CloseParen _ : rest) -> Just ([FuncArg name defaultValue], rest)
+
+        _ -> Nothing
+
+    parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.Comma _ : tokens) = do
+      (restArgs, tokens') <- parseArgList tokens
+      Just (FuncArg name None : restArgs, tokens')
+
+    parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.CloseParen _ : tokens) =
+      Just ([FuncArg name None], tokens)
+
+    parseArgList _ = Nothing
+
+parseFuncArgs _ = Nothing
+
+-- eatIndents :: [TokenInfo] -> [TokenInfo]
+-- eatIndents (TokenInfo (Token.Indents _) _ : rest) = eatIndents rest
+-- eatIndents tokens = tokens
+
+isNewLine :: TokenInfo -> Bool
+isNewLine (TokenInfo (Token.NewLine _) _) = True
 isNewLine _ = False

@@ -18,9 +18,13 @@ data Token
   | SingleEquals
   | Plus
   | Minus
+  | OpenParen
+  | CloseParen
+  | Colon
+  | Comma
+  | Def
   | Return
-  | NewLine
-  | Indents Int
+  | NewLine { indents :: Int }
   deriving (Show)
 
 data Location = Location {
@@ -128,13 +132,21 @@ updateLocation location _ = nextColumn location
 
 lex :: Input -> [TokenInfo]
 lex (Input [] _) = []
+lex (inputToken "def" Def -> Just (token, input)) = token : lex input
 lex (inputToken "return" Return -> Just (token, input)) = token : lex input
 lex (inputToken "=" SingleEquals -> Just (token, input)) = token : lex input
 lex (inputToken "+" Plus -> Just (token, input)) = token : lex input
 lex (inputToken "-" Minus -> Just (token, input)) = token : lex input
--- lex (Input ('"' : rest) start) = 
-lex (inputToken "\n" NewLine -> Just (token, input)) = token : lex input
-lex (inputSpan (== '\t') -> Just ((tabs, span), input)) = TokenInfo (Indents (length tabs)) span : lex input
+lex (inputToken "(" OpenParen -> Just (token, input)) = token : lex input
+lex (inputToken ")" CloseParen -> Just (token, input)) = token : lex input
+lex (inputToken ":" Colon -> Just (token, input)) = token : lex input
+lex (inputToken "," Comma -> Just (token, input)) = token : lex input
+
+lex (inputConsume '\n' -> Just (start, input)) =
+  case lexIndents input of
+    Just ((indents, end), input') -> TokenInfo (NewLine indents) (start `union` end) : lex input'
+    Nothing -> TokenInfo (NewLine 0) start : lex input
+
 lex (inputSpan isWhiteSpace -> Just (_, input)) = lex input
 lex (lexNumber -> Just ((num, span), input)) = TokenInfo (IntLit num) span : lex input
 lex (lexIdent -> Just ((ident, span), input)) = TokenInfo (Ident ident) span : lex input
@@ -162,3 +174,11 @@ lexStringLit input = do
   (end, input''') <- inputConsume '"' input''
 
   Just ((string, start `union` end), input''')
+
+lexIndents :: Input -> Maybe ((Int, Span), Input)
+lexIndents (inputConsume '\t' -> Just (start, input)) =
+  case lexIndents input of
+    Just ((count, end), input') -> Just ((count + 1, start `union` end), input')
+    Nothing -> Just ((1, start), input)
+
+lexIndents _ = Nothing

@@ -2,9 +2,8 @@
 
 module Interpreter (Env, Value, run, defaultEnvironment) where
 
-import Parser (Func, FuncArg, Stmt, Expr, BinOp)
+import Parser (Func (Func), FuncArg (FuncArg), Stmt, Expr, BinOp)
 import qualified Parser as Func (Func(..))
-import qualified Parser as FuncArg (FuncArg(..))
 import qualified Parser as Stmt (Stmt(..))
 import qualified Parser as Expr (Expr(..))
 import qualified Parser as BinOp (BinOp(..))
@@ -27,6 +26,7 @@ defaultEnvironment = Env Map.empty
 data Value
   = Int Int
   | String String
+  | FuncRef Func
   | None
   deriving (Show)
 
@@ -36,27 +36,32 @@ data EvalResult
   | Err String
   deriving (Show)
 
--- -- |Call a function in the program with the provided arguments, and retrieve the returned value, and
--- --  the new program state.
--- call :: Parser.Func -> [Value] -> State Env EvalResult
--- call Parser.Func { args, body } passedArgs = do
---   createCallEnv args passedArgs
---   run body
+-- |Call a function in the program with the provided arguments, and retrieve the returned value, and
+--  the new program state.
+call :: Func -> [Value] -> State Env EvalResult
+call Func { args, body } passedArgs = do
+  createCallEnv args passedArgs
+  run body
 
--- -- |Initialise a sub-environment for a function call with the provided argument names and values.
--- createCallEnv :: [Parser.FuncArg] -> [Value] -> State Env ()
--- createCallEnv [] _ = pure ()
+-- |Initialise a sub-environment for a function call with the provided argument names and values.
+createCallEnv :: [Parser.FuncArg] -> [Value] -> State Env EvalResult
+createCallEnv [] _ = pure $ Ok None
 
--- -- Set the next function argument to the next passed value.
--- createCallEnv (Parser.FuncArg nextArgName _ : restArgs) (nextArgValue : restArgValues) = do
---   modify (\env -> env { vars = Map.insert nextArgName nextArgValue env.vars })
---   createCallEnv restArgs restArgValues
+-- Set the next function argument to the next passed value.
+createCallEnv (FuncArg nextArgName _ : restArgs) (nextArgValue : restArgValues) = do
+  modify (\env -> env { vars = Map.insert nextArgName nextArgValue env.vars })
+  createCallEnv restArgs restArgValues
 
--- -- Ran out of passed arguments, use the default.
--- createCallEnv (Parser.FuncArg nextArgName nextArgExpr : restArgs) [] = do
---   nextArgValue <- eval nextArgExpr
---   modify (\env -> env { vars = Map.insert nextArgName nextArgValue env.vars })
---   createCallEnv restArgs []
+-- Ran out of passed arguments, use the default.
+createCallEnv (Parser.FuncArg nextArgName nextArgExpr : restArgs) [] = do
+  nextArgValue <- eval nextArgExpr
+
+  case nextArgValue of
+    Ok value -> do
+      modify (\env -> env { vars = Map.insert nextArgName value env.vars })
+      createCallEnv restArgs []
+
+    Err message -> pure $ Err message
 
 -- |Execute a program retrieve the returned value, and the new program state.
 run :: [Stmt] -> State Env EvalResult
@@ -78,6 +83,10 @@ runStmt Stmt.Assign { name, expr } = do
       modify (\env -> env { vars = Map.insert name value env.vars })
       pure Nothing
     Err message -> pure $ Just (Err message)
+
+runStmt Stmt.DefineFunc { name, func } = do
+  modify (\env -> env { vars = Map.insert name (FuncRef func) env.vars })
+  pure Nothing
 
 runStmt (Stmt.Return expr) = eval expr <&> Just
 
