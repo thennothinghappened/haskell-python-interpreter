@@ -172,6 +172,7 @@ parseTerminalExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
 parseTerminalExpr (TokenInfo (Token.IntLit value) _ : rest) = Just (IntLit value, rest)
 parseTerminalExpr (TokenInfo (Token.Ident value) _ : rest) = Just (Ref value, rest)
 parseTerminalExpr (TokenInfo (Token.StringLit value) _ : rest) = Just (StringLit value, rest)
+parseTerminalExpr (TokenInfo Token.None _ : rest) = Just (None, rest)
 parseTerminalExpr _ = Nothing
 
 parseFuncArgs :: [TokenInfo] -> Maybe ([FuncArg], [TokenInfo])

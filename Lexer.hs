@@ -25,6 +25,7 @@ data Token
   | Def
   | Return
   | Global
+  | None
   | NewLine { indents :: Int }
   deriving (Show)
 
@@ -136,6 +137,7 @@ lex (Input [] _) = []
 lex (inputToken "def" Def -> Just (token, input)) = token : lex input
 lex (inputToken "return" Return -> Just (token, input)) = token : lex input
 lex (inputToken "global" Global -> Just (token, input)) = token : lex input
+lex (inputToken "None" None -> Just (token, input)) = token : lex input
 lex (inputToken "=" SingleEquals -> Just (token, input)) = token : lex input
 lex (inputToken "+" Plus -> Just (token, input)) = token : lex input
 lex (inputToken "-" Minus -> Just (token, input)) = token : lex input
