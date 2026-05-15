@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
 
-module Interpreter (Env, Value, run, defaultEnvironment) where
+module Interpreter (Env, Value, Result(..), EvalResult, run, defaultEnvironment) where
 
 import Parser (Func (Func), FuncArg (..), Stmt, Expr, BinOp)
 import qualified Parser as Func (Func(..))
@@ -14,7 +14,7 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Control.Monad.State (State, MonadState (get), modify, evalState, runState, execState)
+import Control.Monad.State (State, MonadState (get), modify)
 import Data.Functor ((<&>))
 import Control.Applicative.Combinators ((<|>))
 

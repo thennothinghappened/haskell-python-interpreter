@@ -1,10 +1,9 @@
 module Main where
 
-import Prelude hiding (lex)
-import Lexer(lexString)
-import Parser(parse)
-import Interpreter(run, defaultEnvironment)
-import Control.Monad.State (runState)
+import Lexer (lexString)
+import Parser (parse)
+import Interpreter (Result(..), run, defaultEnvironment)
+import Control.Monad.State (evalState)
 
 main :: IO ()
 main = do
@@ -16,7 +15,8 @@ main = do
   let program = parse tokens
   print program
 
-  let (result, _) = runState (run program) defaultEnvironment
-  print result
+  case evalState (run program) defaultEnvironment of
+    Ok value -> putStrLn $ "Program returned: " ++ show value
+    Err message -> putStrLn $ "Program failed with message: " ++ show message
 
   pure ()
