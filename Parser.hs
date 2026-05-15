@@ -5,8 +5,9 @@ module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), BinOp(..), parse) where
 
 import Lexer (TokenInfo(..), Span)
 import qualified Lexer as Token (Token(..))
-import Data.Maybe (fromMaybe)
 import Control.Monad.Combinators ((<|>))
+import Data.List (intercalate)
+import Data.List.Split (splitOn)
 
 -- |A callable function in the program.
 data Func = Func {
@@ -19,7 +20,11 @@ data Func = Func {
 data FuncArg = FuncArg {
   name :: String,
   defaultValue :: Maybe Expr
-} deriving (Show)
+}
+
+instance Show FuncArg where
+  show FuncArg { name, defaultValue = Just expr } = name ++ " = " ++ show expr
+  show FuncArg { name } = name
 
 -- |An executable statement in a program.
 data Stmt
@@ -28,7 +33,23 @@ data Stmt
   | Return Expr
   | Global String
   | PoisonStmt { message :: String, span :: Span }
-  deriving (Show)
+
+instance Show Stmt where
+  show Assign { name, expr } =
+    name ++ " = " ++ show expr
+
+  show (Return expr) =
+    "return " ++ show expr
+
+  show (Global name) =
+    "global " ++ name
+
+  show DefineFunc { name, func } =
+    "\ndef " ++ name ++ "(" ++ intercalate ", " (map show func.args) ++ "):" ++
+    concatMap (concatMap ("\n\t" ++) . splitOn "\n" . show) func.body ++ "\n"
+
+  show PoisonStmt { message, span } =
+    "<Invalid Statement: " ++ message ++ " at " ++ show span ++ ">"
 
 -- |An expression that evaluates to a value.
 data Expr
@@ -38,7 +59,14 @@ data Expr
   | BinOp BinOp Expr Expr
   | Call Expr [Expr]
   | None
-  deriving (Show)
+
+instance Show Expr where
+  show (IntLit value) = show value
+  show (StringLit value) = show value
+  show (Ref name) = name
+  show (BinOp op left right) = "(" ++ show left ++ " " ++ show op ++ " " ++ show right ++ ")"
+  show (Call target args) = show target ++ "(" ++ intercalate ", " (map show args) ++ ")"
+  show None = "None"
 
 -- |An operation taking two operands.
 data BinOp
