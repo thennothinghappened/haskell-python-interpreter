@@ -26,6 +26,7 @@ data Stmt
   = Assign { name :: String, expr :: Expr }
   | DefineFunc { name :: String, func :: Func }
   | Return Expr
+  | Global String
   | PoisonStmt { message :: String, span :: Span }
   deriving (Show)
 
@@ -108,6 +109,9 @@ parseBody indents
       Nothing ->
         PoisonStmt "Return invalid expression" start
         `thenRest` parseBody indents (dropWhile (not . isNewLine) rest)
+
+parseBody indents (TokenInfo Token.Global _ : TokenInfo (Token.Ident name) _ : rest) =
+  Global name `thenRest` parseBody indents rest
 
 parseBody _ (token : _) = error ("Unhandled token " ++ show token)
 

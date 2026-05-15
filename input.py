@@ -6,6 +6,7 @@ b = a + 1
 idk = "heyo"
 
 def stuff(a, b = 4):
+	global idk
 	idk ="wat"
 	return a + "whoa!!! "
 

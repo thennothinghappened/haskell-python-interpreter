@@ -14,7 +14,7 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Control.Monad.State (State, MonadState (get), modify)
+import Control.Monad.State (State, MonadState (get), modify, evalState, runState, execState)
 import Data.Functor ((<&>))
 import Control.Applicative.Combinators ((<|>))
 
@@ -54,6 +54,11 @@ setVar name value = do
 -- |Check whether the variable with the provided name is defined as referring to a global.
 treatAsGlobal :: String -> Env -> Bool
 treatAsGlobal name env = Set.member name (scope env).globals
+
+-- |Make the given variable name refer to a global variable even when assigned.
+makeGlobalReference :: String -> State Env ()
+makeGlobalReference name =
+  modifyScope (\scope -> scope { globals = Set.insert name scope.globals })
 
 -- |Retrieve the current scope in this environment.
 scope :: Env -> Scope
@@ -129,7 +134,7 @@ evalCallArgs (FuncArg name (Just expr) : restArgs) [] = do
       case restResult of
         Ok restArgPairs -> pure $ Ok ((name, value) : restArgPairs)
         Err message -> pure $ Err message
-        
+
     Err message -> pure $ Err ("Error in evaluating the default value for argument " ++ name ++ ": " ++ message)
 
 evalCallArgs (arg : restArgs) (value : restValues) = do
@@ -173,6 +178,7 @@ runStmt Stmt.DefineFunc { name, func } = do
   pure Nothing
 
 runStmt (Stmt.Return expr) = eval expr <&> Just
+runStmt (Stmt.Global name) = makeGlobalReference name >> pure Nothing
 
 runStmt (Stmt.PoisonStmt { span, message }) =
   pure (Just (Err ("Malformed program at " ++ show span ++ ": " ++ message)))
