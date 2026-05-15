@@ -120,22 +120,21 @@ parseExpr tokens = do
   (left, tokens') <- parseTerminalExpr tokens
   parsePostfixExpr left tokens'
 
+-- |Parse an expression which appears on the right-hand side of another.
 parsePostfixExpr :: Expr -> [TokenInfo] -> Maybe (Expr, [TokenInfo])
-parsePostfixExpr left tokens =
-  case tokens of
-    (TokenInfo Token.Plus _ : tokens') -> do
-      (right, tokens'') <- parseExpr tokens'
-      Just (BinOp Add left right, tokens'')
+parsePostfixExpr left (TokenInfo Token.Plus _ : tokens) = do
+  (right, tokens') <- parseExpr tokens
+  Just (BinOp Add left right, tokens')
 
-    (TokenInfo Token.Minus _ : tokens') -> do
-      (right, tokens'') <- parseExpr tokens'
-      Just (BinOp Sub left right, tokens'')
+parsePostfixExpr left (TokenInfo Token.Minus _ : tokens') = do
+  (right, tokens'') <- parseExpr tokens'
+  Just (BinOp Sub left right, tokens'')
 
-    (inParenthesis (Just . parseCallArgs) -> Just (args, tokens')) ->
-      let call = Call left args
-       in parsePostfixExpr call tokens' <|> Just (call, tokens')
+parsePostfixExpr left (inParenthesis (Just . parseCallArgs) -> Just (args, tokens')) =
+  let call = Call left args
+    in parsePostfixExpr call tokens' <|> Just (call, tokens')
 
-    _ -> Just (left, tokens)
+parsePostfixExpr left tokens = Just (left, tokens)
 
 parseTerminalExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
 parseTerminalExpr (TokenInfo (Token.IntLit value) _ : rest) = Just (IntLit value, rest)
