@@ -2,25 +2,83 @@
 
 module Interpreter (Env, Value, run, defaultEnvironment) where
 
-import Parser (Func (Func), FuncArg (FuncArg), Stmt, Expr, BinOp)
+import Parser (Func (Func), FuncArg (..), Stmt, Expr, BinOp)
 import qualified Parser as Func (Func(..))
 import qualified Parser as Stmt (Stmt(..))
 import qualified Parser as Expr (Expr(..))
 import qualified Parser as BinOp (BinOp(..))
 
-import Control.Monad.State (State, MonadState (get), modify)
+import Data.Map (Map)
 import qualified Data.Map as Map
+
+import Data.Set (Set)
+import qualified Data.Set as Set
+
+import Control.Monad.State (State, MonadState (get), modify)
 import Data.Functor ((<&>))
+import Control.Applicative.Combinators ((<|>))
 
 -- |A sandboxed environment in which to execute a program.
 --  Represents the current program state.
-newtype Env = Env {
-  vars :: Map.Map String Value
+data Env = Env {
+  -- |The global scope in the environment.
+  global :: Scope,
+
+  -- |Newest-first stack of scopes for function calls.
+  callStack :: [Scope]
 }
+
+data Scope = Scope {
+  -- |Variables defined in this scope.
+  vars :: Map String Value,
+
+  -- |Set of variable names which should refer to variables in the global scope if assigned.
+  globals :: Set String
+}
+
+-- |Retrieve a variable's value by its name in the environment, if it exists.
+getVar :: String -> Env -> Maybe Value
+getVar name env@Env { callStack = (scope : _), global }
+  | treatAsGlobal name env = Map.lookup name global.vars
+  | otherwise = Map.lookup name scope.vars <|> Map.lookup name global.vars
+getVar name Env { global } = Map.lookup name global.vars
+
+-- |Set a variable to the provided value.
+setVar :: String -> Value -> State Env ()
+setVar name value = do
+  env <- get
+  if treatAsGlobal name env
+    then modifyGlobalScope $ scopeSetVar name value
+    else modifyScope $ scopeSetVar name value
+
+-- |Check whether the variable with the provided name is defined as referring to a global.
+treatAsGlobal :: String -> Env -> Bool
+treatAsGlobal name env = Set.member name (scope env).globals
+
+-- |Retrieve the current scope in this environment.
+scope :: Env -> Scope
+scope Env { callStack = (scope : _) } = scope
+scope Env { global } = global
+
+modifyScope :: (Scope -> Scope) -> State Env ()
+modifyScope f = modify (\env -> case env of
+    Env { callStack = (scope : rest) } -> env { callStack = f scope : rest }
+    Env { global } -> env { global = f global }
+  )
+
+modifyGlobalScope :: (Scope -> Scope) -> State Env ()
+modifyGlobalScope f = modify (\env -> env { global = f env.global })
+
+-- |Set a variable by name in the scope to the given value.
+scopeSetVar :: String -> Value -> Scope -> Scope
+scopeSetVar name value scope = scope { vars = Map.insert name value scope.vars }
 
 -- |An empty environment to begin execution of a program within.
 defaultEnvironment :: Env
-defaultEnvironment = Env Map.empty
+defaultEnvironment = Env emptyScope []
+
+emptyScope :: Scope
+emptyScope = Scope Map.empty Set.empty
 
 -- |A value of a given type at runtime.
 data Value
@@ -43,29 +101,51 @@ type RuntimeError = String
 -- |Call a function in the program with the provided arguments, and retrieve the returned value, and
 --  the new program state.
 call :: Func -> [Value] -> State Env EvalResult
-call Func { args, body } passedArgs = do
-  createCallEnv args passedArgs
-  run body
+call func@Func { args, body } passedArgs = do
+  callArgsResult <- evalCallArgs args passedArgs
+
+  case callArgsResult of
+    Ok callArgs -> do
+      modify $ pushCallScope callArgs
+      result <- run body
+      modify popCallScope
+      pure result
+    Err message -> pure $ Err $ "Error whilst calling " ++ show func ++ ": " ++ message
+
+evalCallArgs :: [FuncArg] -> [Value] -> State Env (Result [(String, Value)] RuntimeError)
+evalCallArgs [] _ =
+  pure $ Ok []
+
+evalCallArgs (FuncArg name Nothing : _) [] =
+  pure $ Err $ "No value provided for non-optional argument " ++ name
+
+evalCallArgs (FuncArg name (Just expr) : restArgs) [] = do
+  valueResult <- eval expr
+
+  case valueResult of
+    Ok value -> do
+      restResult <- evalCallArgs restArgs []
+
+      case restResult of
+        Ok restArgPairs -> pure $ Ok ((name, value) : restArgPairs)
+        Err message -> pure $ Err message
+        
+    Err message -> pure $ Err ("Error in evaluating the default value for argument " ++ name ++ ": " ++ message)
+
+evalCallArgs (arg : restArgs) (value : restValues) = do
+  restResult <- evalCallArgs restArgs restValues
+  case restResult of
+    Ok restArgPairs -> pure $ Ok ((arg.name, value) : restArgPairs)
+    Err message -> pure $ Err message
 
 -- |Initialise a sub-environment for a function call with the provided argument names and values.
-createCallEnv :: [Parser.FuncArg] -> [Value] -> State Env EvalResult
-createCallEnv [] _ = pure $ Ok None
+pushCallScope :: [(String, Value)] -> Env -> Env
+pushCallScope args env = env { callStack = Scope (Map.fromList args) Set.empty : env.callStack }
 
--- Set the next function argument to the next passed value.
-createCallEnv (FuncArg nextArgName _ : restArgs) (nextArgValue : restArgValues) = do
-  modify (\env -> env { vars = Map.insert nextArgName nextArgValue env.vars })
-  createCallEnv restArgs restArgValues
-
--- Ran out of passed arguments, use the default.
-createCallEnv (Parser.FuncArg nextArgName nextArgExpr : restArgs) [] = do
-  nextArgValue <- eval nextArgExpr
-
-  case nextArgValue of
-    Ok value -> do
-      modify (\env -> env { vars = Map.insert nextArgName value env.vars })
-      createCallEnv restArgs []
-
-    Err message -> pure $ Err message
+-- |Leave the current function and return to the previous scope.
+popCallScope :: Env -> Env
+popCallScope env@Env { callStack = (_ : rest) } = env { callStack = rest }
+popCallScope _ = undefined
 
 -- |Execute a program retrieve the returned value, and the new program state.
 run :: [Stmt] -> State Env EvalResult
@@ -84,12 +164,12 @@ runStmt Stmt.Assign { name, expr } = do
 
   case exprResult of
     Ok value -> do
-      modify (\env -> env { vars = Map.insert name value env.vars })
+      setVar name value
       pure Nothing
     Err message -> pure $ Just (Err message)
 
 runStmt Stmt.DefineFunc { name, func } = do
-  modify (\env -> env { vars = Map.insert name (FuncRef func) env.vars })
+  setVar name (FuncRef func)
   pure Nothing
 
 runStmt (Stmt.Return expr) = eval expr <&> Just
@@ -105,7 +185,7 @@ eval (Expr.StringLit value) = pure (Ok (String value))
 eval (Expr.Ref name) = do
   env <- get
 
-  case Map.lookup name env.vars of
+  case getVar name env of
     Just value -> pure $ Ok value
     Nothing -> pure $ Err $ "Reference to undefined variable " ++ show name
 
@@ -137,7 +217,7 @@ eval (Expr.Call target args) = do
           case restResult of
             Ok restValues -> pure $ Ok (value : restValues)
             Err message -> pure $ Err message
-        
+
         Err message -> pure $ Err message
 
 eval Expr.None = pure (Ok None)

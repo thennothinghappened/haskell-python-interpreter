@@ -18,7 +18,7 @@ data Func = Func {
 --  provided.
 data FuncArg = FuncArg {
   name :: String,
-  defaultValue :: Expr
+  defaultValue :: Maybe Expr
 } deriving (Show)
 
 -- |An executable statement in a program.
@@ -145,7 +145,7 @@ parseTerminalExpr _ = Nothing
 parseFuncArgs :: [TokenInfo] -> Maybe ([FuncArg], [TokenInfo])
 parseFuncArgs (TokenInfo (Token.Ident name) _ : TokenInfo Token.SingleEquals _ : tokens) = do
   (defaultValue, tokens') <- parseExpr tokens
-  let arg = FuncArg name defaultValue
+  let arg = FuncArg name (Just defaultValue)
 
   case tokens' of
     (TokenInfo Token.Comma _ : rest) -> do
@@ -156,9 +156,9 @@ parseFuncArgs (TokenInfo (Token.Ident name) _ : TokenInfo Token.SingleEquals _ :
 
 parseFuncArgs (TokenInfo (Token.Ident name) _ : TokenInfo Token.Comma _ : tokens) = do
   (restArgs, tokens') <- parseFuncArgs tokens
-  Just (FuncArg name None : restArgs, tokens')
+  Just (FuncArg name Nothing : restArgs, tokens')
 
-parseFuncArgs (TokenInfo (Token.Ident name) _ : tokens) = Just ([FuncArg name None], tokens)
+parseFuncArgs (TokenInfo (Token.Ident name) _ : tokens) = Just ([FuncArg name Nothing], tokens)
 parseFuncArgs tokens = Just ([], tokens)
 
 -- |Parse a comma-separated list of arguments in calling a function.
