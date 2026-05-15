@@ -145,9 +145,20 @@ lex (inputToken ":" Colon -> Just (token, input)) = token : lex input
 lex (inputToken "," Comma -> Just (token, input)) = token : lex input
 
 lex (inputConsume '\n' -> Just (start, input)) =
-  case lexIndents input of
-    Just ((indents, end), input') -> TokenInfo (NewLine indents) (start `union` end) : lex input'
-    Nothing -> TokenInfo (NewLine 0) start : lex input
+    case lexIndents input of
+      Just ((indents, end), input') -> coalesceLines indents end input'
+      Nothing -> coalesceLines 0 start input
+  where
+    coalesceLines :: Int -> Span -> Input -> [TokenInfo]
+    coalesceLines indents end input =
+      case lex input of
+        (TokenInfo (NewLine indents') end' : rest) ->
+          TokenInfo (NewLine indents') (start `union` end')
+          : rest
+        
+        rest ->
+          TokenInfo (NewLine indents) (start `union` end)
+          : rest
 
 lex (inputSpan isWhiteSpace -> Just (_, input)) = lex input
 lex (lexNumber -> Just ((num, span), input)) = TokenInfo (IntLit num) span : lex input

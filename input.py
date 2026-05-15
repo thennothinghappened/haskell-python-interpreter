@@ -11,7 +11,7 @@ def stuff(a, b = 4):
 	
 	def double(v):
 		return v + v
-	
+
 	return double(a) + "whoa!!! "
 
 message = stuff("...") + "hi " + "there"
