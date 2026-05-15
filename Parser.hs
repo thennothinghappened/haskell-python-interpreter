@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), BinOp(..), parse) where
 
 import Lexer (TokenInfo(..), Span)
 import qualified Lexer as Token (Token(..))
 import Data.Maybe (fromMaybe)
+import Control.Monad.Combinators ((<|>))
 
 -- |A callable function in the program.
 data Func = Func {
@@ -67,7 +69,7 @@ parseBody indents
           ( TokenInfo (Token.Ident name) start
           : TokenInfo Token.SingleEquals _
           : rest ) =
-    case parseInnerExpr rest of
+    case parseExpr rest of
       Just (expr, rest') -> Assign name expr `thenRest` parseBody indents rest'
 
       Nothing ->
@@ -100,7 +102,7 @@ parseBody indents
 parseBody indents
           ( TokenInfo Token.Return start
           : rest ) =
-    case parseInnerExpr rest of
+    case parseExpr rest of
       Just (expr, rest') -> Return expr `thenRest` parseBody indents rest'
 
       Nothing ->
@@ -113,8 +115,8 @@ thenRest :: Stmt -> ([Stmt], [TokenInfo]) -> ([Stmt], [TokenInfo])
 stmt `thenRest` (rest, tokens) = (stmt : rest, tokens)
 
 -- |Parse a top-level expression.
-parseInnerExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
-parseInnerExpr tokens = do
+parseExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
+parseExpr tokens = do
   (left, tokens') <- parseTerminalExpr tokens
   parsePostfixExpr left tokens'
 
@@ -122,18 +124,16 @@ parsePostfixExpr :: Expr -> [TokenInfo] -> Maybe (Expr, [TokenInfo])
 parsePostfixExpr left tokens =
   case tokens of
     (TokenInfo Token.Plus _ : tokens') -> do
-      (right, tokens'') <- parseInnerExpr tokens'
+      (right, tokens'') <- parseExpr tokens'
       Just (BinOp Add left right, tokens'')
 
     (TokenInfo Token.Minus _ : tokens') -> do
-      (right, tokens'') <- parseInnerExpr tokens'
+      (right, tokens'') <- parseExpr tokens'
       Just (BinOp Sub left right, tokens'')
 
-    (TokenInfo Token.OpenParen _ : tokens') -> do
-      (args, tokens'') <- parseFuncCall tokens'
+    (inParenthesis (Just . parseCallArgs) -> Just (args, tokens')) ->
       let call = Call left args
-
-      Just $ fromMaybe (call, tokens'') (parsePostfixExpr call tokens'')
+       in parsePostfixExpr call tokens' <|> Just (call, tokens')
 
     _ -> Just (left, tokens)
 
@@ -151,7 +151,7 @@ parseFuncArgs (TokenInfo Token.OpenParen _ : tokens) = do
     parseArgList (TokenInfo Token.CloseParen _ : tokens) = Just ([], tokens)
 
     parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.SingleEquals _ : tokens) = do
-      (defaultValue, tokens') <- parseInnerExpr tokens
+      (defaultValue, tokens') <- parseExpr tokens
 
       case tokens' of
         (TokenInfo Token.Comma _ : rest) -> do
@@ -173,12 +173,21 @@ parseFuncArgs (TokenInfo Token.OpenParen _ : tokens) = do
 
 parseFuncArgs _ = Nothing
 
-parseFuncCall :: [TokenInfo] -> Maybe ([Expr], [TokenInfo])
-parseFuncCall (TokenInfo Token.CloseParen _ : rest) = Just ([], rest)
+-- |Parse a comma-separated list of arguments in calling a function.
+parseCallArgs :: [TokenInfo] -> ([Expr], [TokenInfo])
+parseCallArgs (parseExpr -> Just (arg, TokenInfo Token.Comma _ : rest)) =
+  let (restArgs, rest') = parseCallArgs rest
+   in (arg : restArgs, rest')
 
--- eatIndents :: [TokenInfo] -> [TokenInfo]
--- eatIndents (TokenInfo (Token.Indents _) _ : rest) = eatIndents rest
--- eatIndents tokens = tokens
+parseCallArgs (parseExpr -> Just (arg, rest)) = ([arg], rest)
+parseCallArgs rest = ([], rest)
+
+-- |Parse something that's surrounded by open and closing parenthesis.
+inParenthesis :: ([TokenInfo] -> Maybe (a, [TokenInfo])) -> [TokenInfo] -> Maybe (a, [TokenInfo])
+inParenthesis f (TokenInfo Token.OpenParen _ : rest) = do
+  (inner, TokenInfo Token.CloseParen _ : rest') <- f rest
+  Just (inner, rest')
+inParenthesis _ _ = Nothing
 
 isNewLine :: TokenInfo -> Bool
 isNewLine (TokenInfo (Token.NewLine _) _) = True
