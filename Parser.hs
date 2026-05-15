@@ -80,7 +80,7 @@ parseBody indents
           ( TokenInfo Token.Def start
           : TokenInfo (Token.Ident name) _
           : rest ) =
-    case parseFuncArgs rest of
+    case inParenthesis parseFuncArgs rest of
       Just (args, TokenInfo Token.Colon _ : rest') ->
         let (body, rest'') = parseBody (indents + 1) rest'
          in DefineFunc { name, func = Func args body } `thenRest` parseBody indents rest''
@@ -144,34 +144,23 @@ parseTerminalExpr (TokenInfo (Token.StringLit value) _ : rest) = Just (StringLit
 parseTerminalExpr _ = Nothing
 
 parseFuncArgs :: [TokenInfo] -> Maybe ([FuncArg], [TokenInfo])
-parseFuncArgs (TokenInfo Token.OpenParen _ : tokens) = do
-    parseArgList tokens
-  where
-    parseArgList :: [TokenInfo] -> Maybe ([FuncArg], [TokenInfo])
-    parseArgList (TokenInfo Token.CloseParen _ : tokens) = Just ([], tokens)
+parseFuncArgs (TokenInfo (Token.Ident name) _ : TokenInfo Token.SingleEquals _ : tokens) = do
+  (defaultValue, tokens') <- parseExpr tokens
+  let arg = FuncArg name defaultValue
 
-    parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.SingleEquals _ : tokens) = do
-      (defaultValue, tokens') <- parseExpr tokens
+  case tokens' of
+    (TokenInfo Token.Comma _ : rest) -> do
+      (restArgs, tokens'') <- parseFuncArgs rest
+      Just (arg : restArgs, tokens'')
 
-      case tokens' of
-        (TokenInfo Token.Comma _ : rest) -> do
-          (restArgs, tokens'') <- parseArgList rest
-          Just (FuncArg name defaultValue : restArgs, tokens'')
+    rest -> Just ([arg], rest)
 
-        (TokenInfo Token.CloseParen _ : rest) -> Just ([FuncArg name defaultValue], rest)
+parseFuncArgs (TokenInfo (Token.Ident name) _ : TokenInfo Token.Comma _ : tokens) = do
+  (restArgs, tokens') <- parseFuncArgs tokens
+  Just (FuncArg name None : restArgs, tokens')
 
-        _ -> Nothing
-
-    parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.Comma _ : tokens) = do
-      (restArgs, tokens') <- parseArgList tokens
-      Just (FuncArg name None : restArgs, tokens')
-
-    parseArgList (TokenInfo (Token.Ident name) _ : TokenInfo Token.CloseParen _ : tokens) =
-      Just ([FuncArg name None], tokens)
-
-    parseArgList _ = Nothing
-
-parseFuncArgs _ = Nothing
+parseFuncArgs (TokenInfo (Token.Ident name) _ : tokens) = Just ([FuncArg name None], tokens)
+parseFuncArgs tokens = Just ([], tokens)
 
 -- |Parse a comma-separated list of arguments in calling a function.
 parseCallArgs :: [TokenInfo] -> ([Expr], [TokenInfo])
