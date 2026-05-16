@@ -18,8 +18,7 @@ main = do
   let program = parse tokens
 
   putStrLn "\n==== Parsed Code ===="
-  -- i have no idea what im doing!
-  putStrLn $ concatMap ((++ "\n") . show) program
+  putStrLn $ unlines (map show program)
 
   putStrLn "\n==== Interpreter Output ===="
   let (result, env) = runState (run program) defaultEnvironment
