@@ -6,6 +6,7 @@ import Prelude hiding (lex)
 import Data.Char (isAlphaNum, isAlpha)
 import Text.Read (readMaybe)
 import Unicode.Char (isWhiteSpace)
+import Data.List.Extra (firstJust)
 
 -- |Convert the passed string into a sequence of lexical tokens that can be later parsed.
 lexString :: String -> [TokenInfo]
@@ -15,6 +16,7 @@ data Token
   = Ident String
   | IntLit Int
   | StringLit String
+  | None
   | SingleEquals
   | Plus
   | Minus
@@ -25,7 +27,6 @@ data Token
   | Def
   | Return
   | Global
-  | None
   | NewLine { indents :: Int }
   deriving (Show)
 
@@ -134,18 +135,7 @@ updateLocation location _ = nextColumn location
 
 lex :: Input -> [TokenInfo]
 lex (Input [] _) = []
-lex (inputToken "def" Def -> Just (token, input)) = token : lex input
-lex (inputToken "return" Return -> Just (token, input)) = token : lex input
-lex (inputToken "global" Global -> Just (token, input)) = token : lex input
-lex (inputToken "None" None -> Just (token, input)) = token : lex input
-lex (inputToken "=" SingleEquals -> Just (token, input)) = token : lex input
-lex (inputToken "+" Plus -> Just (token, input)) = token : lex input
-lex (inputToken "-" Minus -> Just (token, input)) = token : lex input
-lex (inputToken "(" OpenParen -> Just (token, input)) = token : lex input
-lex (inputToken ")" CloseParen -> Just (token, input)) = token : lex input
-lex (inputToken ":" Colon -> Just (token, input)) = token : lex input
-lex (inputToken "," Comma -> Just (token, input)) = token : lex input
-
+lex (lexBasicToken -> Just (token, input)) = token : lex input
 lex (inputConsume '\n' -> Just (start, input)) =
     case lexIndents input of
       Just ((indents, end), input') -> coalesceLines indents end input'
@@ -157,7 +147,7 @@ lex (inputConsume '\n' -> Just (start, input)) =
         (TokenInfo (NewLine indents') end' : rest) ->
           TokenInfo (NewLine indents') (start `union` end')
           : rest
-        
+
         rest ->
           TokenInfo (NewLine indents) (start `union` end)
           : rest
@@ -167,6 +157,22 @@ lex (lexNumber -> Just ((num, span), input)) = TokenInfo (IntLit num) span : lex
 lex (lexIdent -> Just ((ident, span), input)) = TokenInfo (Ident ident) span : lex input
 lex (lexStringLit -> Just ((string, span), input)) = TokenInfo (StringLit string) span : lex input
 lex (Input (c : _) start) = error ("Unexpected character " ++ show c ++ " in input at " ++ show start)
+
+-- |Match a simple string of characters in the input to a token.
+lexBasicToken :: Input -> Maybe (TokenInfo, Input)
+lexBasicToken input = firstJust (\(text, token) -> inputToken text token input) [
+    ("def", Def),
+    ("return", Return),
+    ("global", Global),
+    ("None", None),
+    ("=", SingleEquals),
+    ("+", Plus),
+    ("-", Minus),
+    ("(", OpenParen),
+    (")", CloseParen),
+    (":", Colon),
+    (",", Comma)
+  ]
 
 lexNumber :: Input -> Maybe ((Int, Span), Input)
 lexNumber (inputMapNext (\c -> readMaybe [c]) -> Just ((digit, start), input)) =
