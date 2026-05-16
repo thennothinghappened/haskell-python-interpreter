@@ -197,6 +197,7 @@ lexIdent (inputAccept (\c -> isAlpha c || (c == '_')) -> Just ((c, startSpan), i
 lexIdent _ = Nothing
 
 lexStringLit :: Input -> Maybe ((String, Span), Input)
+lexStringLit (inputStripPrefix "\"\"" -> Just (span, input)) = Just (("", span), input)
 lexStringLit input = do
   (start, input') <- inputConsume '"' input
   ((string, _), input'') <- inputSpan (/= '"') input'
