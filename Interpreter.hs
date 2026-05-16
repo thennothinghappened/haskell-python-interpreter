@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
 
-module Interpreter (Env, Value, Result(..), EvalResult, run, defaultEnvironment) where
+module Interpreter (Env(..), Value, Result(..), EvalResult, run, emptyEnvironment, defaultEnvironment) where
 
 import Parser (Func (Func), FuncArg (..), Stmt, Expr, BinOp)
 import qualified Parser as Func (Func(..))
@@ -14,10 +14,11 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Control.Monad.State (State, MonadState (get), modify)
+import Control.Monad.State (State, MonadState (get), modify, execState)
 import Data.Functor ((<&>))
 import Control.Applicative.Combinators ((<|>))
 import Data.Maybe (fromMaybe)
+import Data.List (intersperse)
 
 -- |A sandboxed environment in which to execute a program.
 --  Represents the current program state.
@@ -26,7 +27,10 @@ data Env = Env {
   global :: Scope,
 
   -- |Newest-first stack of scopes for function calls.
-  callStack :: [Scope]
+  callStack :: [Scope],
+
+  -- |Messages the program printed over its course.
+  stdout :: String
 }
 
 data Scope = Scope {
@@ -80,8 +84,23 @@ scopeSetVar :: String -> Value -> Scope -> Scope
 scopeSetVar name value scope = scope { vars = Map.insert name value scope.vars }
 
 -- |An empty environment to begin execution of a program within.
+emptyEnvironment :: Env
+emptyEnvironment = Env emptyScope [] ""
+
+-- |Default program environment providing standard functions e.g. print()
 defaultEnvironment :: Env
-defaultEnvironment = Env emptyScope []
+defaultEnvironment = execState initStdlib emptyEnvironment
+
+-- |Initialise the list of functions and values provided by the standard library.
+initStdlib :: State Env ()
+initStdlib = do
+  setVar "print" (NativeFunc stdlibPrint)
+
+-- |Append text to the environment's output.
+stdlibPrint :: [Value] -> State Env EvalResult
+stdlibPrint values = do
+  modify (\env -> env { stdout = env.stdout ++ unlines (map show values) })
+  pure $ Ok None
 
 emptyScope :: Scope
 emptyScope = Scope Map.empty Set.empty
@@ -92,8 +111,17 @@ data Value
   | String String
   | Bool Bool
   | FuncRef Func
+  | NativeFunc ([Value] -> State Env EvalResult)
   | None
-  deriving (Show)
+
+instance Show Value where
+  show (Int n) = show n
+  show (String s) = show s
+  show (Bool True) = "True"
+  show (Bool False) = "False"
+  show (FuncRef func) = show func
+  show (NativeFunc _) = "<Reference to native function>"
+  show None = "None"
 
 -- |Generic result type.
 data Result t e
@@ -224,6 +252,13 @@ eval (Expr.Call target args) = do
         Ok argValues -> call func argValues
         Err message -> pure $ Err message
 
+    Ok (NativeFunc func) -> do
+      argValuesResult <- evalArgs args
+
+      case argValuesResult of
+        Ok argValues -> func argValues
+        Err message -> pure $ Err message
+
     Ok value -> pure $ Err ("Value " ++ show value ++ " is not callable")
     Err message -> pure $ Err message
   where
@@ -255,6 +290,7 @@ evalIsTruthy (String "") = pure $ Ok False
 evalIsTruthy (String _) = pure $ Ok True
 evalIsTruthy (Bool value) = pure $ Ok value
 evalIsTruthy (FuncRef _) = pure $ Ok True
+evalIsTruthy (NativeFunc _) = pure $ Ok True
 evalIsTruthy None = pure $ Ok False
 
 -- |Evaluate the result of the given binary operation between two values.

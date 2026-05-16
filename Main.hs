@@ -1,9 +1,11 @@
+{-# LANGUAGE OverloadedRecordDot, DuplicateRecordFields #-}
+
 module Main where
 
 import Lexer (lexString)
 import Parser (parse)
-import Interpreter (Result(..), run, defaultEnvironment)
-import Control.Monad.State (evalState)
+import Interpreter (Env(..), Result(..), run, defaultEnvironment)
+import Control.Monad.State (evalState, runState)
 
 main :: IO ()
 main = do
@@ -20,7 +22,10 @@ main = do
   putStrLn $ concatMap ((++ "\n") . show) program
 
   putStrLn "\n==== Interpreter Output ===="
-  case evalState (run program) defaultEnvironment of
+  let (result, env) = runState (run program) defaultEnvironment
+
+  putStrLn env.stdout
+  case result of
     Just (Ok value) -> putStrLn $ "Program returned: " ++ show value
     Just (Err message) -> putStrLn $ "Program failed with message: " ++ show message
     Nothing -> putStrLn "Program exited with no return value"
