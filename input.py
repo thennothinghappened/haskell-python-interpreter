@@ -15,4 +15,4 @@ def stuff(a, b = 4):
 	return double(a) + "whoa!!! "
 
 message = stuff("...") + "hi " + "there"
-return message + idk
+return True

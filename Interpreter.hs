@@ -89,6 +89,7 @@ emptyScope = Scope Map.empty Set.empty
 data Value
   = Int Int
   | String String
+  | Bool Bool
   | FuncRef Func
   | None
   deriving (Show)
@@ -187,6 +188,7 @@ runStmt (Stmt.PoisonStmt { span, message }) =
 eval :: Expr -> State Env EvalResult
 eval (Expr.IntLit value) = pure (Ok (Int value))
 eval (Expr.StringLit value) = pure (Ok (String value))
+eval (Expr.BoolLit value) = pure (Ok (Bool value))
 
 eval (Expr.Ref name) = do
   env <- get

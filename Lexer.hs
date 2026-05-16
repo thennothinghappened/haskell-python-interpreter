@@ -16,6 +16,7 @@ data Token
   = Ident String
   | IntLit Int
   | StringLit String
+  | BoolLit Bool
   | None
   | SingleEquals
   | Plus
@@ -165,6 +166,8 @@ lexBasicToken input = firstJust (\(text, token) -> inputToken text token input) 
     ("return", Return),
     ("global", Global),
     ("None", None),
+    ("True", BoolLit True),
+    ("False", BoolLit False),
     ("=", SingleEquals),
     ("+", Plus),
     ("-", Minus),

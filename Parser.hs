@@ -55,6 +55,7 @@ instance Show Stmt where
 data Expr
   = IntLit Int
   | StringLit String
+  | BoolLit Bool
   | Ref String
   | BinOp BinOp Expr Expr
   | Call Expr [Expr]
@@ -63,6 +64,8 @@ data Expr
 instance Show Expr where
   show (IntLit value) = show value
   show (StringLit value) = show value
+  show (BoolLit True) = "True"
+  show (BoolLit False) = "False"
   show (Ref name) = name
   show (BinOp op left right) = "(" ++ show left ++ " " ++ show op ++ " " ++ show right ++ ")"
   show (Call target args) = show target ++ "(" ++ intercalate ", " (map show args) ++ ")"
@@ -173,6 +176,7 @@ parseTerminalExpr (TokenInfo (Token.IntLit value) _ : rest) = Just (IntLit value
 parseTerminalExpr (TokenInfo (Token.Ident value) _ : rest) = Just (Ref value, rest)
 parseTerminalExpr (TokenInfo (Token.StringLit value) _ : rest) = Just (StringLit value, rest)
 parseTerminalExpr (TokenInfo Token.None _ : rest) = Just (None, rest)
+parseTerminalExpr (TokenInfo (Token.BoolLit value) _ : rest) = Just (BoolLit value, rest)
 parseTerminalExpr (inParenthesis parseExpr -> Just result) = Just result
 parseTerminalExpr _ = Nothing
 
