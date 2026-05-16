@@ -7,7 +7,12 @@ idk = "heyo"
 
 def stuff(a, b = 4):
 	global idk
-	idk = "wat"
+
+	if True:
+		idk = "wat"
+
+	if False:
+		idk = "nope"
 	
 	def double(v):
 		return v + v
@@ -15,4 +20,4 @@ def stuff(a, b = 4):
 	return double(a) + "whoa!!! "
 
 message = stuff("...") + "hi " + "there"
-return True
+return message + idk

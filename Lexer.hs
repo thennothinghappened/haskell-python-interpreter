@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns, OverloadedRecordDot, DuplicateRecordFields #-}
 
-module Lexer(Token(..), TokenInfo(..), Location, Span, lexString) where
+module Lexer(Token(..), TokenInfo(..), Location, Span, lexString, union) where
 
 import Prelude hiding (lex)
 import Data.Char (isAlphaNum, isAlpha)
@@ -25,6 +25,7 @@ data Token
   | CloseParen
   | Colon
   | Comma
+  | If
   | Def
   | Return
   | Global
@@ -72,7 +73,10 @@ a `union` b = Span (min a.start b.start) (max a.end b.end)
 instance Show Span where
   show Span { start, end } = show start ++ " to " ++ show end
 
-data TokenInfo = TokenInfo Token Span
+data TokenInfo = TokenInfo {
+  token :: Token,
+  span :: Span
+}
 
 instance Show TokenInfo where
   show (TokenInfo token span) = show token ++ " from " ++ show span
@@ -162,6 +166,7 @@ lex (Input (c : _) start) = error ("Unexpected character " ++ show c ++ " in inp
 -- |Match a simple string of characters in the input to a token.
 lexBasicToken :: Input -> Maybe (TokenInfo, Input)
 lexBasicToken input = firstJust (\(text, token) -> inputToken text token input) [
+    ("if", If),
     ("def", Def),
     ("return", Return),
     ("global", Global),

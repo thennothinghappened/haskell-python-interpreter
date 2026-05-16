@@ -21,7 +21,8 @@ main = do
 
   putStrLn "\n==== Interpreter Output ===="
   case evalState (run program) defaultEnvironment of
-    Ok value -> putStrLn $ "Program returned: " ++ show value
-    Err message -> putStrLn $ "Program failed with message: " ++ show message
+    Just (Ok value) -> putStrLn $ "Program returned: " ++ show value
+    Just (Err message) -> putStrLn $ "Program failed with message: " ++ show message
+    Nothing -> putStrLn "Program exited with no return value"
 
   pure ()

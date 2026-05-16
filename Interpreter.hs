@@ -17,6 +17,7 @@ import qualified Data.Set as Set
 import Control.Monad.State (State, MonadState (get), modify)
 import Data.Functor ((<&>))
 import Control.Applicative.Combinators ((<|>))
+import Data.Maybe (fromMaybe)
 
 -- |A sandboxed environment in which to execute a program.
 --  Represents the current program state.
@@ -115,7 +116,7 @@ call func@Func { args, body } passedArgs = do
       modify $ pushCallScope callArgs
       result <- run body
       modify popCallScope
-      pure result
+      pure $ fromMaybe (Ok None) result
     Err message -> pure $ Err $ "Error whilst calling " ++ show func ++ ": " ++ message
 
 evalCallArgs :: [FuncArg] -> [Value] -> State Env (Result [(String, Value)] RuntimeError)
@@ -154,14 +155,14 @@ popCallScope env@Env { callStack = (_ : rest) } = env { callStack = rest }
 popCallScope _ = undefined
 
 -- |Execute a program retrieve the returned value, and the new program state.
-run :: [Stmt] -> State Env EvalResult
-run [] = pure $ Ok None
+run :: [Stmt] -> State Env (Maybe EvalResult)
+run [] = pure Nothing
 run (stmt : rest) = do
   result <- runStmt stmt
 
   case result of
     Nothing -> run rest
-    Just result -> pure result
+    Just result -> pure $ Just result
 
 -- |Execute a single statement in the given program environment.
 runStmt :: Stmt -> State Env (Maybe EvalResult)
@@ -180,6 +181,19 @@ runStmt Stmt.DefineFunc { name, func } = do
 
 runStmt (Stmt.Return expr) = eval expr <&> Just
 runStmt (Stmt.Global name) = makeGlobalReference name >> pure Nothing
+
+runStmt Stmt.If { condition, block } = do
+  result <- eval condition
+  case result of
+    Ok value -> do
+      shouldRunResult <- evalIsTruthy value
+
+      case shouldRunResult of
+        Ok True -> run block
+        Ok False -> pure Nothing
+        Err message -> pure $ Just $ Err message
+
+    Err message -> pure $ Just $ Err message
 
 runStmt (Stmt.PoisonStmt { span, message }) =
   pure (Just (Err ("Malformed program at " ++ show span ++ ": " ++ message)))
@@ -229,6 +243,19 @@ eval (Expr.Call target args) = do
         Err message -> pure $ Err message
 
 eval Expr.None = pure (Ok None)
+
+eval Expr.PoisonExpr { message, span } =
+  pure $ Err $ "Expression at " ++ show span ++ " is invalid: " ++ message
+
+-- |Evaluate whether the provided value can be interpreted as True in a boolean context.
+evalIsTruthy :: Value -> State Env (Result Bool RuntimeError)
+evalIsTruthy (Int 0) = pure $ Ok False
+evalIsTruthy (Int _) = pure $ Ok True
+evalIsTruthy (String "") = pure $ Ok False
+evalIsTruthy (String _) = pure $ Ok True
+evalIsTruthy (Bool value) = pure $ Ok value
+evalIsTruthy (FuncRef _) = pure $ Ok True
+evalIsTruthy None = pure $ Ok False
 
 -- |Evaluate the result of the given binary operation between two values.
 evalBinOp :: BinOp -> Expr -> Expr -> State Env EvalResult

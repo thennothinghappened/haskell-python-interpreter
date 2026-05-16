@@ -3,7 +3,7 @@
 
 module Parser(Func(..), FuncArg(..), Stmt(..), Expr(..), BinOp(..), parse) where
 
-import Lexer (TokenInfo(..), Span)
+import Lexer (TokenInfo(..), Span, union)
 import qualified Lexer as Token (Token(..))
 import Control.Monad.Combinators ((<|>))
 import Data.List (intercalate)
@@ -32,6 +32,7 @@ data Stmt
   | DefineFunc { name :: String, func :: Func }
   | Return Expr
   | Global String
+  | If { condition :: Expr, block :: [Stmt] }
   | PoisonStmt { message :: String, span :: Span }
 
 instance Show Stmt where
@@ -46,10 +47,17 @@ instance Show Stmt where
 
   show DefineFunc { name, func } =
     "\ndef " ++ name ++ "(" ++ intercalate ", " (map show func.args) ++ "):" ++
-    concatMap (concatMap ("\n\t" ++) . splitOn "\n" . show) func.body ++ "\n"
+    indentStatements func.body ++ "\n"
+
+  show If { condition, block } =
+    "\nif " ++ show condition ++ ":" ++
+    indentStatements block
 
   show PoisonStmt { message, span } =
     "<Invalid Statement: " ++ message ++ " at " ++ show span ++ ">"
+
+indentStatements :: [Stmt] -> String
+indentStatements = concatMap (concatMap ("\n\t" ++) . splitOn "\n" . show)
 
 -- |An expression that evaluates to a value.
 data Expr
@@ -60,6 +68,7 @@ data Expr
   | BinOp BinOp Expr Expr
   | Call Expr [Expr]
   | None
+  | PoisonExpr { message :: String, span :: Span }
 
 instance Show Expr where
   show (IntLit value) = show value
@@ -70,6 +79,7 @@ instance Show Expr where
   show (BinOp op left right) = "(" ++ show left ++ " " ++ show op ++ " " ++ show right ++ ")"
   show (Call target args) = show target ++ "(" ++ intercalate ", " (map show args) ++ ")"
   show None = "None"
+  show PoisonExpr { message, span } = "<Invalid Expression: " ++ message ++ " at " ++ show span ++ ">"
 
 -- |An operation taking two operands.
 data BinOp
@@ -144,10 +154,43 @@ parseBody indents
 parseBody indents (TokenInfo Token.Global _ : TokenInfo (Token.Ident name) _ : rest) =
   Global name `thenRest` parseBody indents rest
 
+-- FIXME: please refactor this horror
+parseBody indents (TokenInfo Token.If start : rest) =
+  let (condition, rest') =
+        (case parseExpr rest of
+          Just result -> result
+          Nothing ->
+            let (exprTokens, rest') = break isColon rest
+             in
+              case tokenSpan exprTokens of
+                Just exprSpan -> (PoisonExpr "Invalid expression in if statement" exprSpan, rest')
+                Nothing -> (PoisonExpr "Expecting expression in if statement" start, rest')
+        )
+   in
+    case rest' of
+      (TokenInfo Token.Colon _ : rest'') ->
+        let (block, rest''') = parseBody (indents + 1) rest''
+          in If { condition, block } `thenRest` parseBody indents rest'''
+
+      (TokenInfo _ colonSpot : rest'') ->
+        PoisonStmt "Expected colon following if statement's expression" colonSpot
+        `thenRest` let (_, rest''') = parseBody (indents + 1) rest''
+                    in parseBody indents rest'''
+      
+      [] -> ([PoisonStmt "Unexpected EOF in if statement" start], [])
+
 parseBody _ (token : _) = error ("Unhandled token " ++ show token)
 
 thenRest :: Stmt -> ([Stmt], [TokenInfo]) -> ([Stmt], [TokenInfo])
 stmt `thenRest` (rest, tokens) = (stmt : rest, tokens)
+
+-- |Get a span from the start to the end of the area encompassed by the given tokens.
+tokenSpan :: [TokenInfo] -> Maybe Span
+tokenSpan [] = Nothing
+tokenSpan (first : rest) =
+  case tokenSpan rest of
+    Just end -> Just $ first.span `union` end
+    Nothing -> Just first.span
 
 -- |Parse a top-level expression.
 parseExpr :: [TokenInfo] -> Maybe (Expr, [TokenInfo])
@@ -218,3 +261,7 @@ inParenthesis _ _ = Nothing
 isNewLine :: TokenInfo -> Bool
 isNewLine (TokenInfo (Token.NewLine _) _) = True
 isNewLine _ = False
+
+isColon :: TokenInfo -> Bool
+isColon (TokenInfo Token.Colon _) = True
+isColon _ = False
