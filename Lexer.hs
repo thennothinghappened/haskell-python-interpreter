@@ -26,6 +26,7 @@ data Token
   | Colon
   | Comma
   | If
+  | Else
   | Def
   | Return
   | Global
@@ -167,6 +168,7 @@ lex (Input (c : _) start) = error ("Unexpected character " ++ show c ++ " in inp
 lexBasicToken :: Input -> Maybe (TokenInfo, Input)
 lexBasicToken input = firstJust (\(text, token) -> inputToken text token input) [
     ("if", If),
+    ("else", Else),
     ("def", Def),
     ("return", Return),
     ("global", Global),

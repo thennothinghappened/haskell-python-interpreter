@@ -210,7 +210,7 @@ runStmt Stmt.DefineFunc { name, func } = do
 runStmt (Stmt.Return expr) = eval expr <&> Just
 runStmt (Stmt.Global name) = makeGlobalReference name >> pure Nothing
 
-runStmt Stmt.If { condition, block } = do
+runStmt Stmt.If { condition, block, elseBlock } = do
   result <- eval condition
   case result of
     Ok value -> do
@@ -218,7 +218,9 @@ runStmt Stmt.If { condition, block } = do
 
       case shouldRunResult of
         Ok True -> run block
-        Ok False -> pure Nothing
+        Ok False -> case elseBlock of
+                      Just elseBlock -> run elseBlock
+                      Nothing -> pure Nothing
         Err message -> pure $ Just $ Err message
 
     Err message -> pure $ Just $ Err message

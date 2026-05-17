@@ -32,7 +32,7 @@ data Stmt
   | DefineFunc { name :: String, func :: Func }
   | Return Expr
   | Global String
-  | If { condition :: Expr, block :: [Stmt] }
+  | If { condition :: Expr, block :: [Stmt], elseBlock :: Maybe [Stmt] }
   | PoisonStmt { message :: String, span :: Span }
 
 instance Show Stmt where
@@ -49,9 +49,12 @@ instance Show Stmt where
     "\ndef " ++ name ++ "(" ++ intercalate ", " (map show func.args) ++ "):" ++
     indentStatements func.body ++ "\n"
 
-  show If { condition, block } =
+  show If { condition, block, elseBlock } =
     "\nif " ++ show condition ++ ":" ++
-    indentStatements block
+    indentStatements block ++
+    case elseBlock of
+      Just elseBlock -> "\nelse:" ++ indentStatements elseBlock
+      Nothing -> ""
 
   show PoisonStmt { message, span } =
     "<Invalid Statement: " ++ message ++ " at " ++ show span ++ ">"
@@ -166,18 +169,25 @@ parseBody indents (TokenInfo Token.If start : rest) =
                 Just exprSpan -> (PoisonExpr "Invalid expression in if statement" exprSpan, rest')
                 Nothing -> (PoisonExpr "Expecting expression in if statement" start, rest')
         )
-   in
-    case rest' of
-      (TokenInfo Token.Colon _ : rest'') ->
-        let (block, rest''') = parseBody (indents + 1) rest''
-          in If { condition, block } `thenRest` parseBody indents rest'''
+   in case parseBlock indents rest' of
+        (Right block, TokenInfo (Token.NewLine nextIndents) _ : TokenInfo Token.Else elseSpan : rest'')
+          | nextIndents == indents ->
+            case parseBlock indents rest'' of
+              (Right elseBlock, rest''') ->
+                If { condition, block, elseBlock = Just elseBlock }
+                `thenRest` parseBody indents rest'''
+              
+              (Left message, rest''') ->
+                PoisonStmt message elseSpan
+                `thenRest` parseBody indents rest'''
 
-      (TokenInfo _ colonSpot : rest'') ->
-        PoisonStmt "Expected colon following if statement's expression" colonSpot
-        `thenRest` let (_, rest''') = parseBody (indents + 1) rest''
-                    in parseBody indents rest'''
-      
-      [] -> ([PoisonStmt "Unexpected EOF in if statement" start], [])
+        (Right block, rest'') ->
+          If { condition, block, elseBlock = Nothing }
+          `thenRest` parseBody indents rest''
+
+        (Left message, rest'') ->
+          PoisonStmt message (start `union` condition.span)
+          `thenRest` parseBody indents rest''
 
 parseBody _ (token : _) = error ("Unhandled token " ++ show token)
 
@@ -257,6 +267,16 @@ inParenthesis f (TokenInfo Token.OpenParen _ : rest) = do
   (inner, TokenInfo Token.CloseParen _ : rest') <- f rest
   Just (inner, rest')
 inParenthesis _ _ = Nothing
+
+-- |Parse a colon and an indented block of code after it.
+parseBlock :: Int -> [TokenInfo] -> (Either String [Stmt], [TokenInfo])
+parseBlock indents (TokenInfo Token.Colon _ : tokens) =
+  let (body, restTokens) = parseBody (indents + 1) tokens
+   in (Right body, restTokens)
+
+parseBlock indents tokens =
+  let (_, restTokens) = parseBody (indents + 1) tokens
+   in (Left "Expected a colon when starting a block", restTokens)
 
 isNewLine :: TokenInfo -> Bool
 isNewLine (TokenInfo (Token.NewLine _) _) = True
